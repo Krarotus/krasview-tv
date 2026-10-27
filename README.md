@@ -3,7 +3,7 @@
 [![Build and test](https://github.com/Krarotus/krasview-tv/actions/workflows/build.yml/badge.svg)](https://github.com/Krarotus/krasview-tv/actions/workflows/build.yml)
 
 Нативный клиент KrasView для Android TV с управлением обычным пультом.
-Текущая версия — **0.8**, пакет — `local.krasview.tv`.
+Текущая версия — **0.10**, пакет — `local.krasview.tv`.
 Проект независимый и не является официальным приложением KrasView.
 
 ## Возможности

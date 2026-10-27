@@ -1,0 +1,5 @@
+ZXing core 3.5.3
+Copyright ZXing authors.
+Licensed under the Apache License, Version 2.0.
+Source: https://github.com/zxing/zxing/tree/zxing-3.5.3
+License: https://www.apache.org/licenses/LICENSE-2.0

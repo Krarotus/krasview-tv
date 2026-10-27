@@ -16,8 +16,9 @@ import java.util.*;
 final class Api {
     static final String HOST = "https://atoto.ru";
     final Context context;
+    final String clientUserAgent;
     String token;
-    Api(Context c) { context=c; token=readToken(); }
+    Api(Context c) { context=c;String version;try{version=c.getPackageManager().getPackageInfo(c.getPackageName(),0).versionName;}catch(android.content.pm.PackageManager.NameNotFoundException e){version="dev";}clientUserAgent="App.krasview-tv/"+version;token=readToken(); }
     boolean signedIn() { return token!=null && !token.isEmpty(); }
     static class AuthRequired extends IOException {}
     static class AccessRequired extends IOException {}
@@ -33,6 +34,10 @@ final class Api {
         HttpURLConnection c=(HttpURLConnection)new URL(HOST+path).openConnection();
         c.setConnectTimeout(12000); c.setReadTimeout(15000);
         c.setRequestProperty("Accept","application/json");
+        // The service distinguishes native playback from browser playback by client context.
+        // Identify our own Android TV client; never impersonate the official app or copy its session.
+        c.setRequestProperty("User-Agent",clientUserAgent);
+        c.setRequestProperty("Content-Type","application/json");
         if(signedIn()) c.setRequestProperty("Cookie","token="+URLEncoder.encode(token,"UTF-8"));
         try {
             if(body!=null) {

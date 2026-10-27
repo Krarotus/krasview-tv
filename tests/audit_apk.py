@@ -15,6 +15,4 @@ with zipfile.ZipFile(apk) as archive:
     assert b'Llocal/krasview/tv/FrameProbeActivity;' not in dex,'Temporary diagnostics must not ship'
     assert b'LDpadHold;' not in dex,'Input injection QA helper must not ship'
     assert b'Llocal/krasview/tv/PlayerActivity;' in dex,'Built-in player is missing'
-    assert b'Landroidx/media3/exoplayer/hls/HlsMediaSource;' in dex,'HLS support is missing'
-    assert b'Lorg/json/XML;' not in dex,'JVM-only JSON test library must not ship'
     print(json.dumps({'advertising_sdks_found':found,'temporary_frame_probe_included':False,'native_player_included':True}))

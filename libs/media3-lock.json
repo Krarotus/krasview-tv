@@ -1,14 +1,6 @@
 [
   {
     "group": "androidx.media3",
-    "artifact": "media3-exoplayer-hls",
-    "version": "1.4.1",
-    "type": "aar",
-    "sha256": "43546b6b2ef0c2816f5d3af181c2179a5c1bddb9df85b7b84b3428cd37c887de",
-    "jar": "libs/media3/media3-exoplayer-hls-1.4.1/classes.jar"
-  },
-  {
-    "group": "androidx.media3",
     "artifact": "media3-exoplayer",
     "version": "1.4.1",
     "type": "aar",

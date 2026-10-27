@@ -30,12 +30,12 @@ jobs:
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
-      - name: Download pinned dependencies
-        run: python fetch_dependencies.py
       - name: Unit tests
         run: ./test.ps1
       - name: Audit repository files
         run: python tests/audit_repository.py
+      - name: Download pinned dependencies
+        run: python fetch_dependencies.py
       - name: Build APK with an ephemeral development key
         run: ./build.ps1 -AndroidSdkRoot $env:ANDROID_SDK_ROOT
       - name: Check APK contents

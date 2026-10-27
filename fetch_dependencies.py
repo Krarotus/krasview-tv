@@ -1,10 +1,9 @@
 """Fetch the exact player dependencies in libs/media3-lock.json. Python standard library only."""
 import hashlib,json,pathlib,urllib.request,zipfile
 root=pathlib.Path(__file__).resolve().parent
-dependencies=json.loads((root/'libs/media3-lock.json').read_text(encoding='utf8'))+json.loads((root/'libs/providers-lock.json').read_text(encoding='utf8'))
-for dep in dependencies:
+for dep in json.loads((root/'libs/media3-lock.json').read_text(encoding='utf8')):
     name=f"{dep['artifact']}-{dep['version']}.{dep['type']}"
-    artifact=root/('libs/media3/'+name if dep['type']=='aar' else dep['jar'])
+    artifact=root/'libs/media3'/name
     repository='https://dl.google.com/dl/android/maven2/' if dep['group'].startswith('androidx.') else 'https://repo.maven.apache.org/maven2/'
     url=repository+dep['group'].replace('.','/')+'/'+dep['artifact']+'/'+dep['version']+'/'+name
     artifact.parent.mkdir(parents=True,exist_ok=True)

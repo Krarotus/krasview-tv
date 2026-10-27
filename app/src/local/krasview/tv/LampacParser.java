@@ -17,17 +17,11 @@ final class LampacParser {
         Media.Browse out=new Media.Browse();String data=text.trim();
         if(data.startsWith("{")){JSONObject o=new JSONObject(data);error(o);if(o.has("html"))data=o.getString("html");else if(o.optJSONArray("online")!=null)return providerList(o.getJSONArray("online"),base);else if(o.has("url")){add(out,o,o.optString("title","Видео"),base,false);return out;}else throw new IOException("Неподдерживаемый ответ Lampac.");}
         if(data.startsWith("[")){JSONArray values=new JSONArray(data);if(providers)return providerList(values,base);for(int i=0;i<Math.min(200,values.length());i++){JSONObject o=values.optJSONObject(i);if(o!=null)add(out,o,o.optString("title",o.optString("name","Видео")),base,false);}return out;}
-        List<Element> nodes=Jsoup.parse(data).select(".videos__item[data-json], .videos__button[data-json]");String activeVoice="";
-        for(Element e:nodes)if(e.hasClass("videos__button")&&e.attr("data-json").length()<=65536)try{JSONObject o=new JSONObject(e.attr("data-json"));if(o.optBoolean("active")||e.hasClass("active")){activeVoice=e.text();break;}}catch(JSONException ignored){}
-        if(!activeVoice.isEmpty())out.notice="Озвучка: "+activeVoice;
-        for(Element e:nodes){
+        for(Element e:Jsoup.parse(data).select(".videos__item[data-json], .videos__button[data-json]")){
             if(out.items.size()>=200)break;String raw=e.attr("data-json");if(raw.length()>65536)continue;
             JSONObject o;try{o=new JSONObject(raw);}catch(JSONException ex){continue;}
-            boolean voice=e.hasClass("videos__button");
-            if(voice&&(o.optBoolean("active")||e.hasClass("active"))&&o.optString("method").equals("link"))continue;
-            if(!voice&&!activeVoice.isEmpty()&&!o.has("voice_name")&&!o.has("translate"))o.put("voice_name",activeVoice);
             if(e.hasAttr("s"))o.put("season",e.attr("s"));if(e.hasAttr("e"))o.put("episode",e.attr("e"));
-            add(out,o,e.text(),base,voice);
+            add(out,o,e.text(),base,e.hasClass("videos__button"));
         }
         if(out.items.isEmpty())throw new IOException("Нет поддерживаемых вариантов. Возможно, провайдер недоступен или требует браузерный плагин.");return out;
     }

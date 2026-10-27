@@ -52,8 +52,9 @@ before = snapshot('player-paused')
 base = stamp(before)
 assert not any(s in texts(before) for s in ['Воспроизведение', 'Пауза', 'Продолжить'])
 clickable = [n for n in before.iter('node') if n.get('clickable') == 'true']
-assert len(clickable) == 3, [(n.get('text'), n.get('content-desc')) for n in clickable]
-print('PASS: three player controls, no playback status captions')
+assert len(clickable) == 0, [(n.get('text'), n.get('content-desc')) for n in clickable]
+assert '↑ Настройки' in texts(before)
+print('PASS: buttonless HUD, settings hint and no playback status captions')
 key(22)
 time.sleep(1)
 right = stamp(snapshot('player-right'))
@@ -73,6 +74,7 @@ print('PASS: paced hold acceleration')
 key(82)  # player menu
 menu = snapshot('player-settings')
 assert 'Звуковая дорожка' in texts(menu)
+assert 'Субтитры' in texts(menu)
 key(4)
 key(4)
 key(4)  # detail

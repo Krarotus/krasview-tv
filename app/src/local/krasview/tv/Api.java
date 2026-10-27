@@ -120,7 +120,9 @@ final class Api {
     static class Season { int id; String title; }
     static class Episode { int id,duration; String title,voice; }
     static class Source { String url,label; Source(String u,String l) { url=u;label=l; } }
-    static class Playback { String title; int id,duration; List<Source> sources=new ArrayList<>(); List<String> audioNames=new ArrayList<>(); }
+    static class Subtitle {String url,label,mime;Subtitle(String u,String l,String m){url=u;label=l;mime=m;}}
+    static class Playback { String title; int id,duration; List<Source> sources=new ArrayList<>(); List<String> audioNames=new ArrayList<>();List<Subtitle> subtitles=new ArrayList<>(); }
+    static void subtitles(Playback out,JSONObject video){JSONObject extra=video.optJSONObject("extra");JSONArray list=video.optJSONArray("sub_info");if(list==null&&extra!=null)list=extra.optJSONArray("sub_info");if(list==null)return;for(int i=0;i<Math.min(32,list.length());i++){JSONObject track=list.optJSONObject(i);if(track==null)continue;String name=track.optString("name"),url=SubtitleFiles.url(video.isNull("server")?"":video.optString("server"),video.optInt("server_cache"),video.optString("v_key"),name);if(!url.isEmpty())out.subtitles.add(new Subtitle(url,SubtitleFiles.label(plain(track.optString("label")),i),SubtitleFiles.mime(name)));}}
     static void audioNames(Playback out,JSONObject video) {
         Object info=video.opt("audio_info");if(info==null){JSONObject extra=video.optJSONObject("extra");if(extra!=null)info=extra.opt("audio_info");}
         int count=video.optInt("audio",0);if(info instanceof JSONArray)count=Math.max(count,((JSONArray)info).length());else if(info instanceof JSONObject)count=Math.max(count,((JSONObject)info).length());
@@ -182,7 +184,7 @@ final class Api {
         JSONObject result=request("/api/video/"+id,null);
         if(result.optBoolean("toPay"))throw new AccessRequired();
         JSONObject v=result.optJSONObject("video");if(v==null)throw new IOException("Сервис не выдал видео");
-        Playback out=new Playback();out.id=id;out.duration=v.optInt("duration");out.title=plain(v.optString("v_title","Просмотр"));audioNames(out,v);
+        Playback out=new Playback();out.id=id;out.duration=v.optInt("duration");out.title=plain(v.optString("v_title","Просмотр"));audioNames(out,v);subtitles(out,v);
         for(String key:new String[]{"url","url1","url2"}) {
             String u=v.optString(key,""); if(u.startsWith("//"))u="https:"+u;
             if(u.isEmpty())continue; URL url=new URL(u);
@@ -217,7 +219,7 @@ final class Api {
     }
     static Playback publicPlaybackData(int id,JSONObject video) throws Exception {
         if(video.optInt("v_id")!=id)throw new IOException("Страница содержит другое видео");
-        Playback out=new Playback();out.id=id;out.duration=video.optInt("duration");out.title=plain(video.optString("v_title",video.optString("title","")));audioNames(out,video);
+        Playback out=new Playback();out.id=id;out.duration=video.optInt("duration");out.title=plain(video.optString("v_title",video.optString("title","")));audioNames(out,video);subtitles(out,video);
         for(String key:new String[]{"url","url2"}) {
             String value=video.optString(key,"");if(value.startsWith("//"))value="https:"+value;
             if(value.isEmpty())continue;URL parsed=new URL(value);

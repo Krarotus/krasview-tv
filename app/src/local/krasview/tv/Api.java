@@ -12,6 +12,7 @@ import java.security.KeyStore;
 import javax.crypto.*;
 import javax.crypto.spec.GCMParameterSpec;
 import java.util.*;
+import local.krasview.tv.Media.*;
 
 final class Api {
     static final String HOST = "https://atoto.ru";
@@ -23,12 +24,6 @@ final class Api {
     static class AccessRequired extends IOException {}
     static class PinExpired extends IOException {}
     static class SessionStoreException extends IOException { SessionStoreException(Throwable cause) { super("Local session storage failed",cause); } }
-    static class Film {
-        int id;
-        String title, address, image, year, section, genre, rating;
-        boolean demo;
-    }
-    static class Page { List<Film> items=new ArrayList<>(); boolean more; }
     JSONObject request(String path, JSONObject body) throws Exception {
         HttpURLConnection c=(HttpURLConnection)new URL(HOST+path).openConnection();
         c.setConnectTimeout(12000); c.setReadTimeout(15000);
@@ -104,18 +99,7 @@ final class Api {
         }
         return result;
     }
-    static class Genre {int id;String name,sections;Genre(int i,String n,String s){id=i;name=n;sections=s;}}
     List<Genre> genres() throws Exception {JSONArray data=request("/api/getCategories",null).getJSONArray("data");List<Genre> out=new ArrayList<>();for(int i=0;i<data.length();i++){JSONObject g=data.getJSONObject(i);out.add(new Genre(g.getInt("value"),plain(g.getString("text")),g.optString("section")));}return out;}
-    static class Detail {
-        int id,lastVideo; String title,description,metadata,poster,address,background,year,section,primaryMeta,genres;
-        boolean webRestricted;
-        List<Season> seasons=new ArrayList<>(); List<Episode> episodes=new ArrayList<>();
-        List<Genre> genreTags=new ArrayList<>();
-    }
-    static class Season { int id; String title; }
-    static class Episode { int id,duration; String title,voice; }
-    static class Source { String url,label; Source(String u,String l) { url=u;label=l; } }
-    static class Playback { String title; int id,duration; List<Source> sources=new ArrayList<>(); List<String> audioNames=new ArrayList<>(); }
     static void audioNames(Playback out,JSONObject video) {
         Object info=video.opt("audio_info");if(info==null){JSONObject extra=video.optJSONObject("extra");if(extra!=null)info=extra.opt("audio_info");}
         int count=video.optInt("audio",0);if(info instanceof JSONArray)count=Math.max(count,((JSONArray)info).length());else if(info instanceof JSONObject)count=Math.max(count,((JSONObject)info).length());

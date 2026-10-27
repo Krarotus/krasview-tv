@@ -14,6 +14,7 @@ def total(t):
 def shot(name):run('shell','screencap','-p','/sdcard/krasview-qa.png');run('pull','/sdcard/krasview-qa.png',str(out/(name+'.png')))
 run('shell','am','force-stop','local.krasview.tv')
 run('shell','am','start','-n','local.krasview.tv/.DetailActivity','--es','address','WreckItRalph');time.sleep(5);key(23)
+if 'Источник просмотра' in texts(tree('ralph-source-picker')):key(23)
 t=tree('ralph-choices');assert any('Фильм' in s and '1:41:14' in s for s in texts(t));assert any('Трейлер' in s and '2:21' in s for s in texts(t));shot('ralph-choices')
 assert any(n.get('focused')=='true' and 'Фильм' in n.get('text','') for n in t.iter('node'))
 print('PASS: Watch opens film/trailer list with real durations, first film focused',flush=True)

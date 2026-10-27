@@ -1,7 +1,12 @@
 <network-security-config>
- <base-config cleartextTrafficPermitted="false"/>
+ <!-- Dynamic self-hosted LAN endpoints cannot be expressed as IP ranges in this XML.
+      SourceUrls restricts source HTTP URLs to loopback, private IPv4 and .local. -->
+ <base-config cleartextTrafficPermitted="true"/>
  <domain-config cleartextTrafficPermitted="true">
   <domain includeSubdomains="true">krasview.ru</domain>
   <domain includeSubdomains="true">atoto.ru</domain>
+  <domain>localhost</domain>
+  <domain>127.0.0.1</domain>
+  <domain includeSubdomains="true">local</domain>
  </domain-config>
 </network-security-config>

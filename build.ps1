@@ -28,6 +28,7 @@ $out=Join-Path $PSScriptRoot ('out/'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force "$out/gen","$out/classes" | Out-Null
 Run "$bt/aapt2.exe" @('compile','--dir','app/res','-o',"$out/res.zip")
 $deps=Get-Content 'libs/media3-lock.json' -Raw | ConvertFrom-Json
+$deps+=@(Get-Content 'libs/providers-lock.json' -Raw | ConvertFrom-Json | Where-Object {$_.scope -eq 'runtime'})
 $dependencyJars=@();$resourceArgs=@();$packages=@()
 foreach($dep in $deps) {
     if(-not(Test-Path -LiteralPath (Join-Path $PSScriptRoot $dep.jar))){throw 'Player dependencies are missing. Run: python fetch_dependencies.py'}

@@ -1,6 +1,7 @@
 out/
 research/
 libs/media3/
+libs/providers/
 *.apk
 *.keystore
 *.idsig

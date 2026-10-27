@@ -17,9 +17,9 @@ final class VideoEngine {
     }
     private final ExoPlayer player;private final List<String> audioNames;
     private boolean notified;private Choice videoOverride;
-    VideoEngine(Context context,SurfaceView surface,List<String> names,Listener listener){
+    VideoEngine(Context context,SurfaceView surface,List<String> names,Map<String,String> headers,Listener listener){
         audioNames=names;
-        DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory().setUserAgent("KrasView-TV/0.7 (Android)").setConnectTimeoutMs(12000).setReadTimeoutMs(20000).setDefaultRequestProperties(Collections.singletonMap("Referer","https://hlamer.ru/"));
+        DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory().setUserAgent("KrasView-TV/0.9 (Android)").setConnectTimeoutMs(12000).setReadTimeoutMs(20000).setDefaultRequestProperties(headers);
         player=new ExoPlayer.Builder(context).setMediaSourceFactory(new DefaultMediaSourceFactory(context).setDataSourceFactory(http)).build();
         player.setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true);
         player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon().setPreferredAudioLanguage("ru").setTrackTypeDisabled(C.TRACK_TYPE_TEXT,true).build());
@@ -31,7 +31,7 @@ final class VideoEngine {
             @Override public void onRenderedFirstFrame(){listener.firstFrame();}
         });
     }
-    void open(String url,long position){player.setMediaItem(MediaItem.fromUri(url));if(position>0)player.seekTo(position);player.prepare();}
+    void open(Media.Source source,long position){MediaItem.Builder item=new MediaItem.Builder().setUri(source.url);if(!source.mimeType.isEmpty())item.setMimeType(source.mimeType);player.setMediaItem(item.build());if(position>0)player.seekTo(position);player.prepare();}
     void start(){player.play();}void pause(){player.pause();}boolean isPlaying(){return player.getPlayWhenReady()&&player.getPlaybackState()!=Player.STATE_ENDED;}
     int getCurrentPosition(){return (int)Math.min(Integer.MAX_VALUE,Math.max(0,player.getCurrentPosition()));}
     int getDuration(){return (int)Math.min(Integer.MAX_VALUE,Math.max(0,player.getDuration()));}

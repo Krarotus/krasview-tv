@@ -118,10 +118,11 @@ final class Api {
         List<Genre> genreTags=new ArrayList<>();
     }
     static class Season { int id; String title; }
-    static class Episode { int id,duration; String title,voice; }
+    static class Episode { int id,duration; String title,voice,image=""; }
+    static class NextEpisode { Episode episode;int seasonId;NextEpisode(Episode e,int s){episode=e;seasonId=s;} }
     static class Source { String url,label; Source(String u,String l) { url=u;label=l; } }
     static class Subtitle {String url,label,mime;Subtitle(String u,String l,String m){url=u;label=l;mime=m;}}
-    static class Playback { String title; int id,duration; List<Source> sources=new ArrayList<>(); List<String> audioNames=new ArrayList<>();List<Subtitle> subtitles=new ArrayList<>(); }
+    static class Playback { String title; int id,duration; List<Source> sources=new ArrayList<>(); List<String> audioNames=new ArrayList<>();List<Subtitle> subtitles=new ArrayList<>();List<Episode> episodes=new ArrayList<>(); }
     static void subtitles(Playback out,JSONObject video){JSONObject extra=video.optJSONObject("extra");JSONArray list=video.optJSONArray("sub_info");if(list==null&&extra!=null)list=extra.optJSONArray("sub_info");if(list==null)return;for(int i=0;i<Math.min(32,list.length());i++){JSONObject track=list.optJSONObject(i);if(track==null)continue;String name=track.optString("name"),url=SubtitleFiles.url(video.isNull("server")?"":video.optString("server"),video.optInt("server_cache"),video.optString("v_key"),name);if(!url.isEmpty())out.subtitles.add(new Subtitle(url,SubtitleFiles.label(plain(track.optString("label")),i),SubtitleFiles.mime(name)));}}
     static void audioNames(Playback out,JSONObject video) {
         Object info=video.opt("audio_info");if(info==null){JSONObject extra=video.optJSONObject("extra");if(extra!=null)info=extra.opt("audio_info");}
@@ -159,9 +160,9 @@ final class Api {
     }
     private List<Episode> publicMovieEpisodes(String address)throws Exception{
         String page=publicPage("https://hlamer.ru/movie/"+URLEncoder.encode(address,"UTF-8"));List<Episode> out=new ArrayList<>();
-        for(MovieChoices.Entry item:MovieChoices.parse(page)){Episode e=new Episode();e.id=item.id;e.duration=item.duration;e.title=plain(item.title);e.voice="";out.add(e);}
+        for(MovieChoices.Entry item:MovieChoices.parse(page)){Episode e=new Episode();e.id=item.id;e.duration=item.duration;e.title=plain(item.title);e.voice="";e.image=item.image;out.add(e);}
         if(out.isEmpty()){
-            java.util.regex.Matcher match=contentMatcher(page);if(match.find()){JSONObject video=new JSONObject(new String(Base64.decode(match.group(1),Base64.DEFAULT),StandardCharsets.UTF_8));if(address.equals(video.optString("channel"))&&video.optInt("v_id")>0){Episode e=new Episode();e.id=video.getInt("v_id");e.duration=video.optInt("duration");e.title="Фильм";e.voice="";out.add(e);}}
+            java.util.regex.Matcher match=contentMatcher(page);if(match.find()){JSONObject video=new JSONObject(new String(Base64.decode(match.group(1),Base64.DEFAULT),StandardCharsets.UTF_8));if(address.equals(video.optString("channel"))&&video.optInt("v_id")>0){Episode e=new Episode();e.id=video.getInt("v_id");e.duration=video.optInt("duration");e.title="Фильм";e.voice="";e.image=VideoPreview.url(video.optString("v_key"),video.optInt("preview"));out.add(e);}}
         }
         return out;
     }
@@ -172,10 +173,20 @@ final class Api {
     private static List<Episode> episodes(JSONArray a) throws Exception { List<Episode> out=new ArrayList<>();for(int i=0;i<a.length();i++)out.add(episode(a.getJSONObject(i)));return out; }
     private static Episode episode(JSONObject o) {
         Episode e=new Episode(); e.id=o.optInt("v_id",o.optInt("id"));e.title=plain(o.optString("v_title",o.optString("title","Видео")));e.duration=o.optInt("duration");e.voice="";
+        e.image=VideoPreview.url(o.optString("v_key"),o.optInt("preview"));
         JSONObject extra=o.optJSONObject("extra");if(extra!=null) { Object info=extra.opt("audio_info"); if(info instanceof JSONArray)e.voice=android.text.TextUtils.join(", ",jsonStrings((JSONArray)info)); }
         return e;
     }
     private static List<String> jsonStrings(JSONArray a) {List<String> out=new ArrayList<>();for(int i=0;i<a.length();i++)out.add(a.optString(i));return out;}
+    NextEpisode nextEpisode(Playback current,int seasonId,int[] seasonIds)throws Exception{
+        List<Episode> items=current.episodes;int index=episodeIndex(items,current.id);
+        if(index<0&&seasonId>0){items=season(seasonId);index=episodeIndex(items,current.id);}
+        if(index<0)return null;
+        if(index+1<items.size())return new NextEpisode(items.get(index+1),seasonId);
+        if(seasonIds!=null)for(int i=0;i<seasonIds.length-1;i++)if(seasonIds[i]==seasonId){for(int j=i+1;j<seasonIds.length;j++){List<Episode> following=season(seasonIds[j]);if(!following.isEmpty())return new NextEpisode(following.get(0),seasonIds[j]);}break;}
+        return null;
+    }
+    private static int episodeIndex(List<Episode> items,int id){for(int i=0;i<items.size();i++)if(items.get(i).id==id)return i;return -1;}
     Playback playback(int id) throws Exception {
         try { return apiPlayback(id); }
         catch(AccessRequired e) { return publicPlayback(id); }
@@ -185,6 +196,7 @@ final class Api {
         if(result.optBoolean("toPay"))throw new AccessRequired();
         JSONObject v=result.optJSONObject("video");if(v==null)throw new IOException("Сервис не выдал видео");
         Playback out=new Playback();out.id=id;out.duration=v.optInt("duration");out.title=plain(v.optString("v_title","Просмотр"));audioNames(out,v);subtitles(out,v);
+        JSONArray playlist=result.optJSONArray("list");if(playlist!=null)out.episodes=episodes(playlist);
         for(String key:new String[]{"url","url1","url2"}) {
             String u=v.optString(key,""); if(u.startsWith("//"))u="https:"+u;
             if(u.isEmpty())continue; URL url=new URL(u);

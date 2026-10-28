@@ -13,7 +13,7 @@ def texts(t):return [n.get('text','') for n in t.iter('node')]
 run('shell','am','force-stop','local.krasview.tv');run('shell','logcat','-c')
 run('shell','am','start','-n','local.krasview.tv/.DetailActivity','--es','address','The_Mentalist')
 time.sleep(5);key(23);time.sleep(3);key(20)
-t=tree('mentalist-first-episode');assert any(n.get('focused')=='true' and n.get('text','').startswith('1 серия') for n in t.iter('node'))
+t=tree('mentalist-first-episode');assert any(n.get('focused')=='true' and n.get('content-desc','').startswith('1 серия') for n in t.iter('node'))
 key(23);time.sleep(12);key(85)
 t=tree('mentalist-playing');stamp=next(s for s in texts(t) if re.fullmatch(r'[\d:]+  /  [\d:]+',s));total=0
 for part in stamp.split('  /  ')[1].split(':'):total=total*60+int(part)

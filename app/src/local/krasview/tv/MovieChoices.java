@@ -5,7 +5,7 @@ import java.util.regex.*;
 
 /** Reads only the title's own movie gallery, never recommendations or page scripts. */
 final class MovieChoices {
-    static final class Entry {int id,duration;String title;}
+    static final class Entry {int id,duration;String title,image="";}
     static List<Entry> parse(String page){
         ArrayList<Entry> result=new ArrayList<>();
         Matcher section=Pattern.compile("<div\\b[^>]*\\bid\\s*=\\s*(['\"])movie-content\\1",Pattern.CASE_INSENSITIVE).matcher(page);
@@ -24,6 +24,11 @@ final class MovieChoices {
             Matcher label=Pattern.compile("<div\\b[^>]*\\bitemprop\\s*=\\s*(['\"])name\\1[^>]*>([\\s\\S]*?)(?:<small\\b|</div>)",Pattern.CASE_INSENSITIVE).matcher(item);
             if(label.find())entry.title=label.group(2).replaceAll("<[^>]*>","").trim();
             if(entry.title==null||entry.title.isEmpty())continue;
+            Matcher thumbnail=Pattern.compile("<img\\b[^>]*\\bitemprop\\s*=\\s*(['\"])thumbnailUrl\\1[^>]*>",Pattern.CASE_INSENSITIVE).matcher(item);
+            if(thumbnail.find()){
+                Matcher src=Pattern.compile("\\bsrc\\s*=\\s*(['\"])(https://image\\.krasview\\.ru/video/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+\\.jpg)\\1",Pattern.CASE_INSENSITIVE).matcher(thumbnail.group());
+                if(src.find())entry.image=src.group(2).replaceFirst("/160(?=(_[0-9]+)?\\.jpg$)","/360");
+            }
             Matcher duration=Pattern.compile("<div\\b[^>]*\\bclass\\s*=\\s*(['\"])ic\\1[^>]*>\\s*([0-9:]+)\\s*</div>",Pattern.CASE_INSENSITIVE).matcher(item);
             if(duration.find())try{for(String part:duration.group(2).split(":"))entry.duration=Math.addExact(Math.multiplyExact(entry.duration,60),Integer.parseInt(part));}catch(ArithmeticException|NumberFormatException e){entry.duration=0;}
             result.add(entry);

@@ -22,12 +22,12 @@ public class MainActivity extends TvActivity {
     final ArrayList<Api.Film> films=new ArrayList<>();final ArrayList<Shelf> shelves=new ArrayList<>();
     final String[] labels={"Главная","Фильмы","Сериалы","Мультфильмы","Каталог","Аниме","Избранное","История","Расписание"};
     final String[] icons={"home","movie","tv","cartoon","catalog","anime","bookmark","history","calendar"};
-    boolean alive=true,loading,drawerOpen,searchMode,more;int selectedMenu,page=1,generation,lastRow,lastColumn;
-    String query="",sort="top";long backAt,libraryRevision;AlertDialog pinDialog;int pinGeneration;
+    boolean alive=true,loading,drawerOpen,searchMode,more;int selectedMenu,page=1,generation,recommendationGeneration,lastRow,lastColumn;
+    String historyStamp="",query="",sort="top";long backAt,libraryRevision;AlertDialog pinDialog;int pinGeneration;
     CatalogFilter filter=new CatalogFilter();List<Api.Genre> genreOptions;boolean filterLoading;
-    static final class Shelf {String name,section,sort;List<Api.Film> items=new ArrayList<>();Shelf(String n,String s,String o){name=n;section=s;sort=o;}}
+    static final class Shelf {String name,section,sort,message="";boolean recommendation,failed;FrameLayout content;List<Api.Film> items=new ArrayList<>(),candidates=new ArrayList<>();Shelf(String n,String s,String o){name=n;section=s;sort=o;}}
     final Runnable clockTick=new Runnable(){public void run(){if(!alive)return;Date now=new Date();String clock=new java.text.SimpleDateFormat("HH:mm",new Locale("ru")).format(now),date=new java.text.SimpleDateFormat("d MMMM yyyy\nEEEE",new Locale("ru")).format(now);if(!clock.contentEquals(timeView.getText()))timeView.setText(clock);if(!date.contentEquals(dateView.getText()))dateView.setText(date);handler.postDelayed(this,1000);}};
-    @Override public void onCreate(Bundle state){super.onCreate(state);api=new Api(this);selectedMenu=Math.max(0,Math.min(8,getIntent().getIntExtra("section",0)));readGenre(getIntent());account=text("Аккаунт",14,TEXT);search=new EditText(this);build();handler.post(clockTick);libraryRevision=LocalLibrary.revision(this);load(false);if(getIntent().getBooleanExtra("open_search",false))handler.post(()->editSearch());if(getIntent().getBooleanExtra("open_filter",false))handler.post(()->openFilter());}
+    @Override public void onCreate(Bundle state){super.onCreate(state);api=new Api(this);selectedMenu=Math.max(0,Math.min(8,getIntent().getIntExtra("section",0)));readGenre(getIntent());account=text("Аккаунт",14,TEXT);search=new EditText(this);build();handler.post(clockTick);libraryRevision=LocalLibrary.revision(this);historyStamp=LocalLibrary.historyStamp(this);load(false);if(getIntent().getBooleanExtra("open_search",false))handler.post(()->editSearch());if(getIntent().getBooleanExtra("open_filter",false))handler.post(()->openFilter());}
     void build(){
         root=new FrameLayout(this);root.setBackgroundColor(BG);setContentView(root);
         body=new LinearLayout(this);body.setOrientation(1);FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(-1,-1);bp.topMargin=d(74);root.addView(body,bp);
@@ -56,7 +56,8 @@ public class MainActivity extends TvActivity {
     }
     void openDrawer(){if(drawerOpen)return;drawerOpen=true;drawer.setVisibility(View.VISIBLE);body.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);body.animate().translationX(d(236)).setDuration(160).start();menu.get(selectedMenu).requestFocus();}
     void closeDrawer(boolean focus){drawerOpen=false;drawer.setVisibility(View.GONE);body.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);body.animate().translationX(0).setDuration(160).start();if(focus)focusResults();}
-    void focusResults(){if(!cardRows.isEmpty()&&!cardRows.get(Math.min(lastRow,cardRows.size()-1)).isEmpty()){ArrayList<View> row=cardRows.get(Math.min(lastRow,cardRows.size()-1));row.get(Math.min(lastColumn,row.size()-1)).requestFocus();}else searchButton.requestFocus();}
+    void focusResults(){int row=Math.min(lastRow,cardRows.size()-1);if(row>=0&&cardRows.get(row).isEmpty()){row=nextCardRow(row,1);if(row<0)row=nextCardRow(Math.min(lastRow,cardRows.size()-1),-1);}if(row>=0){ArrayList<View> cards=cardRows.get(row);cards.get(Math.min(lastColumn,cards.size()-1)).requestFocus();}else searchButton.requestFocus();}
+    int nextCardRow(int from,int direction){for(int r=from+direction;r>=0&&r<cardRows.size();r+=direction)if(!cardRows.get(r).isEmpty())return r;return -1;}
     void setSearch(String value){query=value;search.setText(value);}
     void hideKeyboard(){if(search!=null)((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(search.getWindowToken(),0);}
     void editSearch(){
@@ -84,20 +85,32 @@ public class MainActivity extends TvActivity {
         final int mode=selectedMenu,requestedPage=page;final String requestedQuery=query,requestedSort=sort;final boolean isHome=home();final CatalogFilter requestedFilter=filter.copy();
         network.execute(()->{try{
             if(isHome){ArrayList<Shelf> rows=new ArrayList<>();rows.add(new Shelf("Популярные фильмы","movie","top"));rows.add(new Shelf("Популярные сериалы","series","top"));rows.add(new Shelf("Популярное аниме","anime","top"));
-                for(Shelf row:rows){Api.Page result=api.catalog(row.section,"",1,row.sort);row.items.addAll(result.items.subList(0,Math.min(12,result.items.size())));}
-                handler.post(()->{if(!alive||ticket!=generation)return;loading=false;shelves.addAll(rows);renderHome();});
+                ArrayList<Shelf> paired=new ArrayList<>();for(Shelf row:rows){Api.Page result=api.catalog(row.section,"",1,row.sort);row.items.addAll(result.items.subList(0,Math.min(12,result.items.size())));paired.add(row);Shelf rec=new Shelf(row.section.equals("movie")?"Рекомендуем фильмы":row.section.equals("series")?"Рекомендуем сериалы":"Рекомендуем аниме",row.section,"top");rec.recommendation=true;rec.message="Подбираем по истории просмотров…";rec.candidates.addAll(result.items);paired.add(rec);}
+                handler.post(()->{if(!alive||ticket!=generation)return;loading=false;shelves.addAll(paired);renderHome();refreshRecommendations();});
             }else{String section=mode==1?"movie":mode==2?"series":mode==5?"anime":"all";Api.Page result=api.catalog(section,requestedQuery,requestedPage,requestedSort,mode==3,requestedFilter);
                 handler.post(()->{if(!alive||ticket!=generation)return;loading=false;int oldCount=films.size();films.addAll(result.items);more=result.more;renderGrid();if(append){lastRow=oldCount/6;lastColumn=oldCount%6;handler.post(()->focusResults());}});}
         }catch(Exception e){handler.post(()->{if(!alive||ticket!=generation)return;loading=false;if(append)page=Math.max(1,page-1);status.setText("Не удалось загрузить каталог");if(e instanceof Api.AuthRequired){api.logout();empty("Нужен вход в аккаунт","Войти",()->login());}else if(films.isEmpty()&&shelves.isEmpty())empty("Каталог не загрузился","Повторить",()->load(false));});}});
     }
     void empty(String message,String action,Runnable run){status.setVisibility(View.GONE);gridRows.removeAllViews();cardRows.clear();LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(d(32),d(70),d(32),0);gridRows.addView(box);TextView label=text(message,25,TEXT);box.addView(label);TextView b=button(action);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(250),d(52));lp.topMargin=d(22);box.addView(b,lp);b.setOnClickListener(v->run.run());}
-    void renderHome(){status.setVisibility(View.GONE);gridRows.removeAllViews();cardRows.clear();
-        for(int r=0;r<shelves.size();r++){Shelf shelf=shelves.get(r);if(shelf.items.isEmpty())continue;final int rowIndex=cardRows.size();ArrayList<View> rowCards=new ArrayList<>();cardRows.add(rowCards);
-            LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(d(28),d(18),d(28),d(14));gridRows.addView(header);TextView name=text(shelf.name,25,TEXT);header.addView(name,new LinearLayout.LayoutParams(0,-2,1));TextView extra=button("Ещё");header.addView(extra,new LinearLayout.LayoutParams(d(76),d(38)));extra.setOnClickListener(v->{selectedMenu=shelf.section.equals("movie")?1:shelf.section.equals("series")?2:shelf.section.equals("anime")?5:4;sort=shelf.sort;lastRow=lastColumn=0;load(false);});
-            HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);scroll.setClipToPadding(false);scroll.setPadding(d(28),d(8),d(28),d(20));gridRows.addView(scroll);LinearLayout row=new LinearLayout(this);row.setClipChildren(false);scroll.addView(row);
-            for(int i=0;i<shelf.items.size();i++){View card=card(shelf.items.get(i),rowIndex,i,d(188),true);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(188),-2);lp.rightMargin=d(18);row.addView(card,lp);rowCards.add(card);}
+    void renderHome(){final int requestedRow=lastRow,requestedColumn=lastColumn;moreButton=null;status.setVisibility(View.GONE);gridRows.removeAllViews();cardRows.clear();
+        for(int r=0;r<shelves.size();r++){Shelf shelf=shelves.get(r);final int rowIndex=cardRows.size();cardRows.add(new ArrayList<>());
+            LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(d(28),d(18),d(28),d(14));gridRows.addView(header);TextView name=text(shelf.name,25,TEXT);header.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+            if(shelf.recommendation){TextView note=text("По истории просмотров",13,MUTED);header.addView(note);}else{TextView extra=button("Ещё");header.addView(extra,new LinearLayout.LayoutParams(d(76),d(38)));extra.setOnClickListener(v->{selectedMenu=shelf.section.equals("movie")?1:shelf.section.equals("series")?2:shelf.section.equals("anime")?5:4;sort=shelf.sort;lastRow=lastColumn=0;load(false);});}
+            shelf.content=new FrameLayout(this);gridRows.addView(shelf.content,new LinearLayout.LayoutParams(-1,-2));renderShelfItems(shelf,rowIndex);
         }
-        handler.post(()->{if(!drawerOpen)focusResults();});
+        handler.post(()->{if(!drawerOpen){lastRow=requestedRow;lastColumn=requestedColumn;focusResults();}});
+    }
+    void renderShelfItems(Shelf shelf,int rowIndex){View anchor=getCurrentFocus();int selectedColumn=lastColumn;boolean restore=shelf.content.hasFocus();int[] before=new int[2];if(anchor!=null)anchor.getLocationOnScreen(before);shelf.content.removeAllViews();ArrayList<View> rowCards=cardRows.get(rowIndex);rowCards.clear();
+        if(shelf.items.isEmpty()){LinearLayout box=new LinearLayout(this);box.setGravity(Gravity.CENTER_VERTICAL);box.setPadding(d(28),d(8),d(28),d(24));TextView info=text(shelf.message.isEmpty()?"Список пока пуст":shelf.message,16,MUTED);box.addView(info,new LinearLayout.LayoutParams(0,-2,1));shelf.content.addView(box,new FrameLayout.LayoutParams(-1,-2));if(shelf.failed){TextView retry=button("Повторить");box.addView(retry,new LinearLayout.LayoutParams(d(130),d(44)));rowCards.add(retry);retry.setOnFocusChangeListener((v,on)->{v.setBackground(shape(on?TEXT:PANEL,0));retry.setTextColor(on?BG:TEXT);if(on){lastRow=rowIndex;lastColumn=0;}});wireCardNavigation(retry,rowIndex,0);retry.setOnClickListener(v->refreshRecommendations());}}
+        else{HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);scroll.setClipToPadding(false);scroll.setPadding(d(28),d(8),d(28),d(20));shelf.content.addView(scroll);LinearLayout row=new LinearLayout(this);row.setClipChildren(false);scroll.addView(row);
+            for(int i=0;i<shelf.items.size();i++){View card=card(shelf.items.get(i),rowIndex,i,d(188),true);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(188),-2);lp.rightMargin=d(18);row.addView(card,lp);rowCards.add(card);}}
+        if(restore&&!drawerOpen){lastRow=rowIndex;lastColumn=selectedColumn;focusResults();}else if(anchor!=null&&anchor.isAttachedToWindow()){anchor.requestFocus();scroller.post(()->{if(anchor==getCurrentFocus()&&anchor.isAttachedToWindow()){int[] after=new int[2];anchor.getLocationOnScreen(after);scroller.scrollBy(0,after[1]-before[1]);}});}
+    }
+    void refreshRecommendations(){if(!home()||shelves.isEmpty())return;historyStamp=LocalLibrary.historyStamp(this);final List<Api.Film> history=LocalLibrary.list(this,"history");final int request=++recommendationGeneration,ticket=generation;
+        for(int index=0;index<shelves.size();index++){Shelf shelf=shelves.get(index);if(!shelf.recommendation)continue;final int rowIndex=index;final List<Api.Film> popular=new ArrayList<>(shelves.get(index-1).items);shelf.failed=false;Set<String> watched=new HashSet<>();for(Api.Film f:history)watched.add(f.address);shelf.items.removeIf(f->watched.contains(f.address));shelf.message="Подбираем по истории просмотров…";renderShelfItems(shelf,rowIndex);
+            network.execute(()->{Recommendations.Result result;try{result=new Recommendations(this,api).load(shelf.section,history,shelf.candidates,popular);}catch(Exception e){result=new Recommendations.Result();result.failed=true;result.message="Не удалось загрузить рекомендации. Попробуй ещё раз.";}final Recommendations.Result value=result;
+                handler.post(()->{if(!alive||ticket!=generation||request!=recommendationGeneration||!home())return;shelf.items.clear();shelf.items.addAll(value.items);shelf.message=value.message;shelf.failed=value.failed;renderShelfItems(shelf,rowIndex);});});
+        }
     }
     void renderGrid(){status.setVisibility(!home()&&selectedMenu!=6&&selectedMenu!=7&&filter.active()?View.VISIBLE:View.GONE);if(status.getVisibility()==View.VISIBLE)status.setText(filter.summary());gridRows.removeAllViews();cardRows.clear();moreButton=null;
         if(films.isEmpty()){String message=selectedMenu==6?"Пока нет закладок":selectedMenu==7?"История появится после просмотра":searchMode?"Ничего не найдено":"Здесь пока пусто";empty(message,searchMode?"Изменить запрос":"К главной",()->{if(searchMode)editSearch();else{selectedMenu=0;load(false);}});return;}
@@ -115,12 +128,14 @@ public class MainActivity extends TvActivity {
         TextView name=text(film.title,18,TEXT);name.setPadding(0,d(14),0,0);name.setMaxLines(2);name.setEllipsize(TextUtils.TruncateAt.END);box.addView(name,new LinearLayout.LayoutParams(-1,d(62)));TextView year=text(film.year,14,MUTED);box.addView(year);if(film.genre!=null&&!film.genre.isEmpty()){TextView genres=text(film.genre.replace('\n',' ').replaceAll("\\s*,\\s*"," · "),12,MUTED);genres.setMaxLines(1);genres.setEllipsize(TextUtils.TruncateAt.END);genres.setPadding(0,d(4),0,0);box.addView(genres,new LinearLayout.LayoutParams(-1,d(23)));}
         box.setOnFocusChangeListener((v,on)->{art.setBackground(shape(on?TEXT:PANEL,0));v.setScaleX(on?1.025f:1);v.setScaleY(on?1.025f:1);if(on){lastRow=rowIndex;lastColumn=column;}});
         box.setOnClickListener(v->details(film));
-        box.setOnKeyListener((v,key,event)->{if(event.getAction()!=0)return false;switch(key){
+        wireCardNavigation(box,rowIndex,column);return box;
+    }
+    void wireCardNavigation(View box,int rowIndex,int column){box.setOnKeyListener((v,key,event)->{if(event.getAction()!=0)return false;switch(key){
             case KeyEvent.KEYCODE_DPAD_LEFT:if(column==0)openDrawer();else cardRows.get(rowIndex).get(column-1).requestFocus();return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT:if(column+1<cardRows.get(rowIndex).size())cardRows.get(rowIndex).get(column+1).requestFocus();return true;
-            case KeyEvent.KEYCODE_DPAD_UP:if(rowIndex==0)searchButton.requestFocus();else{ArrayList<View> above=cardRows.get(rowIndex-1);above.get(Math.min(column,above.size()-1)).requestFocus();}return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:if(rowIndex+1<cardRows.size()){ArrayList<View> below=cardRows.get(rowIndex+1);below.get(Math.min(column,below.size()-1)).requestFocus();}else if(moreButton!=null)moreButton.requestFocus();return true;
-        }return false;});return box;
+            case KeyEvent.KEYCODE_DPAD_UP:{int above=nextCardRow(rowIndex,-1);if(above<0)searchButton.requestFocus();else{ArrayList<View> cards=cardRows.get(above);cards.get(Math.min(column,cards.size()-1)).requestFocus();}return true;}
+            case KeyEvent.KEYCODE_DPAD_DOWN:{int below=nextCardRow(rowIndex,1);if(below>=0){ArrayList<View> cards=cardRows.get(below);cards.get(Math.min(column,cards.size()-1)).requestFocus();}else if(moreButton!=null)moreButton.requestFocus();return true;}
+        }return false;});
     }
     void details(Api.Film film){Intent i=new Intent(this,DetailActivity.class);i.putExtra("address",film.address);startActivity(i);}
     void account() {
@@ -210,6 +225,6 @@ public class MainActivity extends TvActivity {
     @Override public boolean dispatchKeyEvent(KeyEvent e){if(e.getAction()==0){if(e.getKeyCode()==KeyEvent.KEYCODE_SEARCH){editSearch();return true;}if(e.getKeyCode()==KeyEvent.KEYCODE_MENU){if(drawerOpen)closeDrawer(true);else openDrawer();return true;}}return super.dispatchKeyEvent(e);}
     @Override public void onBackPressed(){if(drawerOpen){closeDrawer(true);return;}if(searchMode||selectedMenu!=0){searchMode=false;selectedMenu=0;query="";sort="top";filter=new CatalogFilter();lastRow=lastColumn=0;load(false);menuButton.requestFocus();return;}if(System.currentTimeMillis()-backAt<1800){super.onBackPressed();return;}backAt=System.currentTimeMillis();menuButton.requestFocus();Toast.makeText(this,"Ещё раз «Назад» — выйти",Toast.LENGTH_SHORT).show();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent.hasExtra("section")){selectedMenu=Math.max(0,Math.min(8,intent.getIntExtra("section",0)));searchMode=false;query="";sort="top";filter=new CatalogFilter();readGenre(intent);lastRow=lastColumn=0;if(drawerOpen)closeDrawer(false);load(false);}if(intent.getBooleanExtra("open_search",false))editSearch();if(intent.getBooleanExtra("open_filter",false))openFilter();}
-    @Override protected void onResume(){super.onResume();if(api!=null){long revision=LocalLibrary.revision(this);if(revision!=libraryRevision){libraryRevision=revision;if(selectedMenu==6||selectedMenu==7)load(false);}}}
+    @Override protected void onResume(){super.onResume();if(api!=null){long revision=LocalLibrary.revision(this);if(revision!=libraryRevision){libraryRevision=revision;if(selectedMenu==6||selectedMenu==7)load(false);else if(home()&&!loading&&!LocalLibrary.historyStamp(this).equals(historyStamp))refreshRecommendations();}}}
     @Override protected void onDestroy(){alive=false;generation++;pinGeneration++;handler.removeCallbacksAndMessages(null);network.shutdownNow();super.onDestroy();}
 }

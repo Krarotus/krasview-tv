@@ -27,6 +27,7 @@ final class Api {
     static class Film {
         int id;
         String title, address, image, year, section, genre, rating;
+        final LinkedHashMap<Integer,String> genreTags=new LinkedHashMap<>();
         boolean demo;
     }
     static class Page { List<Film> items=new ArrayList<>(); boolean more; }
@@ -111,6 +112,13 @@ final class Api {
     }
     static class Genre {int id;String name,sections;Genre(int i,String n,String s){id=i;name=n;sections=s;}}
     List<Genre> genres() throws Exception {JSONArray data=request("/api/getCategories",null).getJSONArray("data");List<Genre> out=new ArrayList<>();for(int i=0;i<data.length();i++){JSONObject g=data.getJSONObject(i);out.add(new Genre(g.getInt("value"),plain(g.getString("text")),g.optString("section")));}return out;}
+    Film recommendationSeed(Film stored)throws Exception{
+        JSONObject r=request("/api/channel/item/"+URLEncoder.encode(stored.address,"UTF-8"),null),c=r.getJSONObject("channel");
+        Film f=LocalLibrary.film(LocalLibrary.json(stored));f.section=c.optString("section",stored.section);
+        JSONObject tags=r.optJSONObject("genres");List<String> names=new ArrayList<>();
+        if(tags!=null){Iterator<String> keys=tags.keys();while(keys.hasNext()){String key=keys.next(),name=plain(tags.optString(key));try{f.genreTags.put(Integer.parseInt(key),name);names.add(name);}catch(NumberFormatException ignored){}}}
+        if(!names.isEmpty())f.genre=android.text.TextUtils.join(" · ",names);return f;
+    }
     static class Detail {
         int id,lastVideo; String title,description,metadata,poster,address,background,year,section,primaryMeta,genres;
         boolean webRestricted;

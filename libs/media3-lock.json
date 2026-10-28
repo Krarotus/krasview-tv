@@ -1,6 +1,14 @@
 [
   {
     "group": "androidx.media3",
+    "artifact": "media3-ui",
+    "version": "1.4.1",
+    "type": "aar",
+    "sha256": "ea604f1a88fe691b1d4dab8ae3a3de110729341629dd69311ee83611e32c97b2",
+    "jar": "libs/media3/media3-ui-1.4.1/classes.jar"
+  },
+  {
+    "group": "androidx.media3",
     "artifact": "media3-exoplayer",
     "version": "1.4.1",
     "type": "aar",

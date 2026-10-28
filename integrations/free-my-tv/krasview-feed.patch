@@ -1,0 +1,372 @@
+diff --git a/app/AndroidManifest.xml b/app/AndroidManifest.xml
+--- a/app/AndroidManifest.xml
++++ b/app/AndroidManifest.xml
+@@ -1,10 +1,11 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+     package="io.freemytv"
+-    android:versionCode="3"
+-    android:versionName="1.2">
++    android:versionCode="4"
++    android:versionName="1.2-krasview">
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="local.krasview.tv.permission.READ_RECOMMENDATIONS" />
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <!-- After the TV boots (and after a TV update), checks that Free My TV mode is still as you left it. -->
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+@@ -20,6 +21,7 @@
+          returns null). The shelf and streaming apps, the live TV apps and, through the <intent>, every TV app
+          (for "All Apps"). -->
+     <queries>
++        <package android:name="local.krasview.tv" />
+         <package android:name="com.netflix.ninja" />
+         <package android:name="com.google.android.youtube.tv" />
+         <package android:name="com.amazon.firetv.youtube" />
+diff --git a/app/src/io/freemytv/Recs.java b/app/src/io/freemytv/Recs.java
+--- a/app/src/io/freemytv/Recs.java
++++ b/app/src/io/freemytv/Recs.java
+@@ -47,7 +47,7 @@
+         String kind;            // "movie" or "tv"
+         String title, backdrop, meta = "", app, pkg;
+         String link;            // opens the title in its app (looked up with Watchmode), or null: the app's home
+-        boolean detailed;
++        boolean detailed, krasview;
+         java.io.File photo;     // one of your own photos (Photos): no title, no caption
+     }
+ 
+@@ -94,6 +94,7 @@
+     };
+     private static final Map<String, String> SERVICE_NAME = new HashMap<>();
+     static {
++        SERVICE_NAME.put("krasview", "KrasView");
+         SERVICE_NAME.put("netflix", "Netflix");
+         SERVICE_NAME.put("prime", "Prime Video");
+         SERVICE_NAME.put("disney", "Disney+");
+@@ -126,6 +127,8 @@
+         return instance;
+     }
+ 
++    private final KrasViewFeed krasViewFeed;
++    private volatile List<Pick> krasViewPicks = new ArrayList<>();
+     private final Context context;
+     private final SharedPreferences cache;
+     private final ExecutorService io = Executors.newSingleThreadExecutor();
+@@ -144,6 +147,7 @@
+ 
+     private Recs(Context c) {
+         context = c;
++        krasViewFeed = new KrasViewFeed(c, list -> { krasViewPicks = list; notifyListeners(); });
+         cache = c.getSharedPreferences("recs", Context.MODE_PRIVATE);
+         if (cache.getInt("version", 0) != CACHE_VERSION) cache.edit().clear().putInt("version", CACHE_VERSION).apply();
+         try {
+@@ -157,8 +161,8 @@
+         }
+     }
+ 
+-    void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
+-    void removeListener(Listener l) { listeners.remove(l); }
++    void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); krasViewFeed.active(true); }
++    void removeListener(Listener l) { listeners.remove(l); if (listeners.isEmpty()) krasViewFeed.active(false); }
+ 
+     static boolean hasKey(Context c) {
+         return !Config.TMDB_KEY.trim().isEmpty();
+@@ -204,6 +208,7 @@
+ 
+     /** This hour's 3, movies only ("movie") or shows only ("tv"); null = both (the home screen tabs). */
+     List<Pick> now(String kind) {
++        if (hasKrasView()) return krasViewNow(kind, 0);
+         List<Pick> list = new ArrayList<>();
+         if (!hasKey(context)) return list;    // no TMDB key: no recommendations
+         Map<String, Boolean> have = new HashMap<>();   // one look per app, not per title (this runs every 15 s)
+@@ -223,6 +228,10 @@
+         return out;
+     }
+ 
++    boolean hasKrasView() { return !krasViewPicks.isEmpty(); }
++    int krasViewCount(String kind) { int count=0;for(Pick p:krasViewPicks)if(kind==null||kind.equals(p.kind))count++;return count; }
++    List<Pick> krasViewNow(String kind,int first) { List<Pick> filtered=new ArrayList<>();for(Pick p:krasViewPicks)if(kind==null||kind.equals(p.kind))filtered.add(p);int start=Math.max(0,Math.min(first,Math.max(0,filtered.size()-6)));return new ArrayList<>(filtered.subList(start,Math.min(start+6,filtered.size()))); }
++
+     /** "Law & Order: Special Victims Unit" → "law & order" (what comes before ":" or " - "). */
+     private static String franchise(String title) {
+         String t = title == null ? "" : title.toLowerCase(Locale.ROOT);
+@@ -265,6 +274,7 @@
+ 
+     /** With a key: fetches the list if stale or the time of day (morning/afternoon/night) changed; then the details. */
+     void refreshIfStale() {
++        krasViewFeed.refresh(false);
+         if (!hasKey(context) || fetching) return;
+         long now = System.currentTimeMillis();
+         long stamp = sourceStamp();   // a new key, country, animation choice or installed streaming-app set refetches
+@@ -394,7 +404,7 @@
+ 
+     /** Movies and shows are numbered separately on TMDB: a pick is identified by type + number. */
+     static String key(Pick p) {
+-        return p.kind + ":" + p.id;
++        return (p.krasview ? "krasview:" : "") + p.kind + ":" + p.id;
+     }
+ 
+     private void notifyListeners() {
+@@ -733,7 +743,7 @@
+         //noinspection ResultOfMethodCallIgnored
+         f.getParentFile().mkdirs();
+         File part = new File(f.getPath() + ".part");
+-        HttpURLConnection c = (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
++        HttpURLConnection c = (HttpURLConnection) new URL(p.krasview ? p.backdrop : IMAGES + p.backdrop).openConnection();
+         c.setConnectTimeout(8000);
+         c.setReadTimeout(20000);
+         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
+@@ -769,7 +779,7 @@
+             if (b == null) throw new IOException("unreadable image");
+             AppLog.w("backdrop \u201c" + p.title + "\u201d: " + bounds.outWidth + "×" + bounds.outHeight + " → " + Backdrop.W + "×" + Backdrop.H);
+             boolean forLight = light;
+-            Backdrop backdrop = Backdrop.make(b, forLight);
++            Backdrop backdrop = Backdrop.make(b, forLight, false, p.krasview);
+             if (forLight != light) return;   // the design changed midway: this one is stale
+             synchronized (images) {
+                 images.put(p.backdrop, backdrop);
+diff --git a/app/src/io/freemytv/HomeView.java b/app/src/io/freemytv/HomeView.java
+--- a/app/src/io/freemytv/HomeView.java
++++ b/app/src/io/freemytv/HomeView.java
+@@ -138,14 +138,15 @@
+     private Shader nightGradient;
+ 
+     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
+-    private int tab, topIndex, cardIndex;
++    private int tab, topIndex, cardIndex, krasViewFirst;
++    private boolean krasViewLayout;
+     private int widgetIndex;    // with TalkBack on, the drawer's weather (0) or quotes (1) card can take the focus
+     private List<Recs.Pick> cards = new ArrayList<>();
+     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
+     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
+     private final RectF[] topRects = new RectF[3 + HomeApps.MAX_TOP];
+-    private final Spring[] cardFocus = new Spring[3];
+-    private final RectF[] cardRects = new RectF[3];
++    private final Spring[] cardFocus = new Spring[6];
++    private final RectF[] cardRects = new RectF[6];
+     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
+     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
+     private Shader lightGradient;
+@@ -405,7 +406,7 @@
+             topFocus[i] = new Spring(0.26f, 0.85f, 0);
+             topRects[i] = new RectF();
+         }
+-        for (int i = 0; i < 3; i++) {
++        for (int i = 0; i < cardFocus.length; i++) {
+             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
+             cardRects[i] = new RectF();
+         }
+@@ -510,6 +511,7 @@
+             updatePicks();
+         }
+         if (tab != 0) selectTab(0);
++        if(krasViewFirst!=0){krasViewFirst=0;updateCards();}
+         retarget(!animated);
+         motionDirty = true;
+     }
+@@ -735,7 +737,7 @@
+                 refreshHero(false);
+                 heroLayer.invalidate();
+             }
+-            if (!picksOn()) heroLayer.invalidate();
++            if (!picksOn() || krasViewLayout) heroLayer.invalidate();
+         }
+ 
+         // Busy: something is moving, or the sheet or the drawer is open.
+@@ -2681,7 +2683,7 @@
+             return;
+         }
+         for (int i = picksOn() ? 0 : 3; i < 3 + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
+-        for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
++        for (int i = 0; i < Math.min(cardRects.length, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
+         for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + shelfVisible); i++) out.add(a11yId(Z_SHELF, i));
+         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
+         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
+@@ -2733,7 +2735,7 @@
+                 dy = (i < 3 ? heroLayer : status).getTranslationY();
+                 break;
+             case Z_CARDS:
+-                if (i >= Math.min(3, cards.size())) return false;
++                if (i >= Math.min(cardRects.length, cards.size())) return false;
+                 a11yRect.set(cardRects[i]);
+                 dy = heroLayer.getTranslationY();
+                 break;
+@@ -2916,9 +2918,14 @@
+         }
+         float top = L_CARDS_TOP * k, ch = L_CARD_H * k, g = L_CARD_GAP * k, left = MARGIN * k, tall = L_TALL_W * k;
+         float wide = (CONTENT_R - MARGIN) * k - 2 * tall - 2 * g;
+-        cardRects[0].set(left, top, left + wide, top + ch);
+-        cardRects[1].set(cardRects[0].right + g, top, cardRects[0].right + g + tall, top + ch);
+-        cardRects[2].set(cardRects[1].right + g, top, cardRects[1].right + g + tall, top + ch);
++        if (krasViewLayout) {
++            float width=((CONTENT_R-MARGIN)*k-5*g)/6, height=width*1.5f;
++            for(int i=0;i<cardRects.length;i++)cardRects[i].set(left+i*(width+g),top,left+i*(width+g)+width,top+height);
++        } else {
++            cardRects[0].set(left, top, left + wide, top + ch);
++            cardRects[1].set(cardRects[0].right + g, top, cardRects[0].right + g + tall, top + ch);
++            cardRects[2].set(cardRects[1].right + g, top, cardRects[1].right + g + tall, top + ch);
++        }
+         for (RectF r : cardRects) snap(r);
+         for (HomeApps.Item it : lightButtons) {
+             Symbols.warm(getContext(), it.symbol, 27 * k);
+@@ -2930,7 +2937,10 @@
+ 
+     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the first one. */
+     private void updateCards() {
+-        List<Recs.Pick> list = recs.now(TAB_KIND[tab]);
++        boolean external=recs.hasKrasView();
++        if(krasViewLayout!=external){krasViewLayout=external;krasViewFirst=0;layoutLight();}
++        krasViewFirst=Math.min(krasViewFirst,Math.max(0,recs.krasViewCount(TAB_KIND[tab])-6));
++        List<Recs.Pick> list = external?recs.krasViewNow(TAB_KIND[tab],krasViewFirst):recs.now(TAB_KIND[tab]);
+         if (!samePicks(list, cards)) {
+             cards = list;
+             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
+@@ -2939,7 +2949,7 @@
+                 retarget(false);
+             }
+         }
+-        for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
++        for (Recs.Pick p : (external ? cards : recs.wanted())) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
+         // Picks bring their own background; without them (no TMDB key), your photo if there is one.
+         boolean own = !picksOn() && Photos.on(getContext());
+         Backdrop b = own ? Photos.backdrop(getContext(), ownReady) : cards.isEmpty() ? null : recs.backdrop(cards.get(0));
+@@ -2956,6 +2966,7 @@
+     private void selectTab(int index) {
+         if (index == tab) return;
+         tab = index;
++        krasViewFirst=0;cardIndex=0;
+         updateCards();
+         heroDirty = true;
+     }
+@@ -3005,6 +3016,10 @@
+             drawClock(c);
+             if (HomeData.coinCount() > 0 || playingTab != null) drawQuotes(c);
+             return;
++        }
++        if(krasViewLayout){
++            c.drawText(clockText,1100*k,90*k,lTabOn);
++            c.drawText(dateText,1100*k,128*k,lCardMeta);
+         }
+         String hello = Ui.tr("For You");
+         c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
+@@ -3033,14 +3048,19 @@
+             c.drawText(tabs()[i], r.centerX() - p.measureText(tabs()[i]) / 2, r.centerY() + Ui.halfCap(p), p);
+         }
+         int top = -1;
+-        for (int i = 0; i < 3; i++) if (cardFocus[i].value > 0.02f && (top < 0 || cardFocus[i].value > cardFocus[top].value)) top = i;
+-        for (int i = 0; i < 3; i++) if (i != top) drawLightCard(c, i);
++        for (int i = 0; i < (krasViewLayout?cards.size():3); i++) if (cardFocus[i].value > 0.02f && (top < 0 || cardFocus[i].value > cardFocus[top].value)) top = i;
++        for (int i = 0; i < (krasViewLayout?cards.size():3); i++) if (i != top) drawLightCard(c, i);
+         if (top >= 0) drawLightCard(c, top);
++        if(krasViewLayout){
++            float middle=(L_CARDS_TOP+195)*k;
++            if(krasViewFirst>0)Symbols.draw(getContext(),c,"chevron_left",(MARGIN-28)*k,middle,24*k,lCardMeta.getColor());
++            if(krasViewFirst+cards.size()<recs.krasViewCount(TAB_KIND[tab]))Symbols.draw(getContext(),c,"chevron_right",(CONTENT_R+28)*k,middle,24*k,lCardMeta.getColor());
++        }
+         if (HomeData.coinCount() > 0 || playingTab != null) drawQuotes(c);
+     }
+ 
+     private boolean picksOn() {
+-        return Recs.hasKey(getContext());
++        return recs.hasKrasView() || Recs.hasKey(getContext());
+     }
+ 
+     private void drawClock(Canvas c) {
+@@ -3085,9 +3105,9 @@
+         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
+         c.restore();
+         Backdrop b = p == null ? null : recs.backdrop(p);
+-        Bitmap img = b == null ? null : (i == 0 ? b.wide : b.tall);
++        Bitmap img = b == null ? null : (i == 0 && !krasViewLayout ? b.wide : b.tall);
+         if (img != null) {
+-            roundImage(c, img, i == 0 ? b.wideShader : b.tallShader, cell, r);
++            roundImage(c, img, i == 0 && !krasViewLayout ? b.wideShader : b.tallShader, cell, r);
+         } else {
+             fill.setShader(null);
+             fill.setColor(tone(0xFFDADADF, 0xFF2C2C2E));
+@@ -3124,7 +3144,7 @@
+         if (p == null) return;
+         fitPaint.set(lCardTitle);
+         c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 46 * k, lCardTitle);
+-        if (i == 0 && p.meta != null && !p.meta.isEmpty()) {
++        if ((i == 0 || krasViewLayout) && p.meta != null && !p.meta.isEmpty()) {
+             fitPaint.set(lCardMeta);
+             c.drawText(TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 80 * k, lCardMeta);
+         }
+@@ -3186,7 +3206,11 @@
+             case Z_CARDS:
+                 if (dx != 0) {
+                     int next = Math.max(0, Math.min(cards.size() - 1, cardIndex + dx));
+-                    if (next == cardIndex) return true;
++                    if (next == cardIndex) {
++                        if(krasViewLayout&&((dx<0&&krasViewFirst>0)||(dx>0&&krasViewFirst+cards.size()<recs.krasViewCount(TAB_KIND[tab])))) {
++                            krasViewFirst+=dx;updateCards();
++                        } else return true;
++                    }
+                     cardIndex = next;
+                 } else if (dy < 0) {
+                     zone = Z_TOP;
+diff --git a/app/src/io/freemytv/Backdrop.java b/app/src/io/freemytv/Backdrop.java
+--- a/app/src/io/freemytv/Backdrop.java
++++ b/app/src/io/freemytv/Backdrop.java
+@@ -81,6 +81,12 @@
+      * right, so it still reads as your photo. The glass and the drawer stay as they are.
+      */
+     static Backdrop make(Bitmap src, boolean forLight, boolean own) {
++        return make(src,forLight,own,false);
++    }
++
++    static Backdrop make(Bitmap src, boolean forLight, boolean own, boolean poster) {
++        // Preserve a portrait card before the background is cropped to 16:9.
++        Bitmap fullPoster=poster&&forLight?card(src,ui(273),ui(410)):null;
+         // Cropped to 16:9 at the source's resolution first, then filtered down (no step over 2×).
+         Bitmap crop = center(src, (float) W / H);
+         if (crop != src) src.recycle();
+@@ -94,7 +100,7 @@
+         Canvas c = new Canvas(out);
+         if (forLight) {
+             // Light design: everything comes from the photo without scrims.
+-            Bitmap wide = card(out, WIDE_W, WIDE_H), tall = card(out, TALL_W, TALL_H);
++            Bitmap wide = fullPoster!=null?fullPoster:card(out, WIDE_W, WIDE_H), tall = fullPoster!=null?fullPoster:card(out, TALL_W, TALL_H);
+             int[] frost = reduce(out, FW, FH, 3, 3);
+             int[] light = whiten(frost.clone(), 0.82f);
+             int[] glass = reduce(out, GW, GH, 2, 2);
+diff --git a/app/src/io/freemytv/KrasViewFeed.java b/app/src/io/freemytv/KrasViewFeed.java
+new file mode 100644
+--- /dev/null
++++ b/app/src/io/freemytv/KrasViewFeed.java
+@@ -0,0 +1,34 @@
++package io.freemytv;
++
++import android.content.Context;
++import android.database.ContentObserver;
++import android.database.Cursor;
++import android.net.Uri;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.SystemClock;
++import java.util.*;
++import java.util.concurrent.*;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.function.Consumer;
++
++/** Only published title cards cross the app boundary; the session remains in KrasView TV. */
++final class KrasViewFeed {
++    static final Uri URI=Uri.parse("content://local.krasview.tv.recommendations/items");
++    static final String PACKAGE="local.krasview.tv";
++    final Context context;final Consumer<List<Recs.Pick>> listener;final Handler main=new Handler(Looper.getMainLooper());
++    final ExecutorService io=Executors.newSingleThreadExecutor();final AtomicBoolean reading=new AtomicBoolean();
++    boolean active,observing,dirty;long lastRead;
++    final ContentObserver observer=new ContentObserver(main){@Override public void onChange(boolean self){refresh(true);}};
++    KrasViewFeed(Context c,Consumer<List<Recs.Pick>> listener){context=c;this.listener=listener;}
++    void active(boolean value){if(active==value)return;active=value;if(value){try{context.getContentResolver().registerContentObserver(URI,true,observer);observing=true;}catch(RuntimeException ignored){}refresh(true);}else if(observing){context.getContentResolver().unregisterContentObserver(observer);observing=false;}}
++    void refresh(boolean force){if(!active||(!force&&SystemClock.uptimeMillis()-lastRead<15000))return;if(!reading.compareAndSet(false,true)){dirty|=force;return;}lastRead=SystemClock.uptimeMillis();
++        io.execute(()->{List<Recs.Pick> cards=new ArrayList<>();try(Cursor cursor=context.getContentResolver().query(URI,new String[]{"_id","address","title","image","year","section"},null,null,null)){
++            if(cursor!=null)while(cursor.moveToNext()&&cards.size()<36){String address=cursor.getString(1),title=cursor.getString(2),image=cursor.getString(3),year=cursor.getString(4),section=cursor.getString(5);
++                if(address==null||!address.matches("[\\p{L}\\p{N}_.-]{1,256}")||title==null||title.isEmpty()||!Arrays.asList("movie","series","anime").contains(section))continue;
++                Uri art=Uri.parse(image==null?"":image);if(!"https".equals(art.getScheme())||!("cdn1.atoto.ru".equals(art.getHost())||"image.krasview.ru".equals(art.getHost())))continue;
++                Recs.Pick p=new Recs.Pick();p.id=cursor.getInt(0);p.kind="movie".equals(section)?"movie":"tv";p.title=title;p.backdrop=image;p.app="krasview";p.pkg=PACKAGE;p.link="krasviewtv://film/"+Uri.encode(address);p.meta=year==null?"":year;p.krasview=true;p.detailed=true;cards.add(p);
++            }
++        }catch(RuntimeException ignored){}final List<Recs.Pick> result=cards;main.post(()->{reading.set(false);listener.accept(result);if(dirty){dirty=false;refresh(true);}});});
++    }
++}

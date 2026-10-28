@@ -14,8 +14,8 @@ def total(t):
 def shot(name):run('shell','screencap','-p','/sdcard/krasview-qa.png');run('pull','/sdcard/krasview-qa.png',str(out/(name+'.png')))
 run('shell','am','force-stop','local.krasview.tv')
 run('shell','am','start','-n','local.krasview.tv/.DetailActivity','--es','address','WreckItRalph');time.sleep(5);key(23)
-t=tree('ralph-choices');assert any('Фильм' in s and '1:41:14' in s for s in texts(t));assert any('Трейлер' in s and '2:21' in s for s in texts(t));shot('ralph-choices')
-assert any(n.get('focused')=='true' and 'Фильм' in n.get('text','') for n in t.iter('node'))
+t=tree('ralph-choices');assert any('Фильм' in n.get('content-desc','') and '1:41:14' in n.get('content-desc','') for n in t.iter('node'));assert any('Трейлер' in n.get('content-desc','') and '2:21' in n.get('content-desc','') for n in t.iter('node'));shot('ralph-choices')
+assert any(n.get('focused')=='true' and 'Фильм' in n.get('content-desc','') for n in t.iter('node'))
 print('PASS: Watch opens film/trailer list with real durations, first film focused',flush=True)
 key(23);time.sleep(10);key(85);time.sleep(1);t=tree('ralph-full-film');assert 6072<=total(t)<=6075
 assert any('Фильм' in s for s in texts(t))

@@ -12,12 +12,13 @@ final class Recommendations {
     final Context context;final Api api;final SharedPreferences prefs;
     static final class Result {final List<Api.Film> items=new ArrayList<>();String message="";boolean failed;}
     Recommendations(Context c,Api a){context=c;api=a;prefs=c.getSharedPreferences("recommendations",0);}
+    static String historySignature(String section,List<Api.Film> history){StringBuilder result=new StringBuilder("genre-v1|").append(section);for(Api.Film f:history)result.append('|').append(LocalLibrary.json(f));return result.toString();}
     static RecommendationRanker.Item item(Api.Film f){return new RecommendationRanker.Item(f.address,f.section,f.genre);}
     static String firstWatch(String section){return section.equals("movie")?"Посмотри фильм — здесь появятся рекомендации по твоей истории.":section.equals("series")?"Посмотри сериал — здесь появятся рекомендации по твоей истории.":"Посмотри аниме — здесь появятся рекомендации по твоей истории.";}
     Result load(String section,List<Api.Film> history,List<Api.Film> initialCandidates,List<Api.Film> popular)throws Exception{
         Result result=new Result();List<Api.Film> seeds=new ArrayList<>();Set<String> excluded=new LinkedHashSet<>();
-        StringBuilder stamp=new StringBuilder("genre-v1|").append(section);
-        for(Api.Film f:history){excluded.add(f.address);stamp.append('|').append(LocalLibrary.json(f));if(section.equals(f.section)&&seeds.size()<SEED_LIMIT)seeds.add(f);}
+        StringBuilder stamp=new StringBuilder(historySignature(section,history));
+        for(Api.Film f:history){excluded.add(f.address);if(section.equals(f.section)&&seeds.size()<SEED_LIMIT)seeds.add(f);}
         for(Api.Film f:popular){excluded.add(f.address);stamp.append('|').append(f.address);}
         if(seeds.isEmpty()){result.message=firstWatch(section);return result;}
         String signature=stamp.toString();Result cached=cached(section,signature);if(cached!=null){android.util.Log.i("KrasViewTV","Recommendations cache hit; section="+section+" count="+cached.items.size());return cached;}
@@ -46,7 +47,7 @@ final class Recommendations {
     }
     static List<RecommendationRanker.Item> rank(List<RecommendationRanker.Item> watched,Map<String,Api.Film> pool,Set<String> excluded,String section){List<RecommendationRanker.Item> items=new ArrayList<>();for(Api.Film f:pool.values())items.add(item(f));return RecommendationRanker.rank(watched,items,excluded,section,ROW_LIMIT);}
     Result cached(String section,String signature){try{JSONObject o=new JSONObject(prefs.getString("row-"+section,"{}"));long age=System.currentTimeMillis()-o.optLong("at");if(age<0||age>ROW_TTL||!signature.equals(o.optString("signature")))return null;JSONArray list=o.optJSONArray("items");if(list==null)return null;Result result=new Result();for(int i=0;i<list.length();i++)result.items.add(LocalLibrary.film(list.getJSONObject(i)));result.message=o.optString("message");return result;}catch(JSONException e){return null;}}
-    void save(String section,String signature,Result result)throws JSONException{JSONArray list=new JSONArray();for(Api.Film f:result.items)list.put(LocalLibrary.json(f));JSONObject o=new JSONObject().put("at",System.currentTimeMillis()).put("signature",signature).put("items",list).put("message",result.message);prefs.edit().putString("row-"+section,o.toString()).apply();}
+    void save(String section,String signature,Result result)throws JSONException{JSONArray list=new JSONArray();for(Api.Film f:result.items)list.put(LocalLibrary.json(f));JSONObject o=new JSONObject().put("at",System.currentTimeMillis()).put("signature",signature).put("items",list).put("message",result.message);prefs.edit().putString("row-"+section,o.toString()).apply();RecommendationProvider.changed(context);}
     Api.Film seed(String address){try{JSONObject o=new JSONObject(prefs.getString("seeds","{}")).optJSONObject(address);if(o==null)return null;long age=System.currentTimeMillis()-o.optLong("at");return age>=0&&age<SEED_TTL?LocalLibrary.film(o.getJSONObject("film")):null;}catch(JSONException e){return null;}}
     void saveSeed(Api.Film film)throws JSONException{synchronized(Recommendations.class){JSONObject all=new JSONObject(prefs.getString("seeds","{}"));all.put(film.address,new JSONObject().put("at",System.currentTimeMillis()).put("film",LocalLibrary.json(film)));while(all.length()>60){String oldest=null;long at=Long.MAX_VALUE;Iterator<String> keys=all.keys();while(keys.hasNext()){String key=keys.next();long value=all.getJSONObject(key).optLong("at");if(value<at){at=value;oldest=key;}}if(oldest==null)break;all.remove(oldest);}prefs.edit().putString("seeds",all.toString()).apply();}}
 }

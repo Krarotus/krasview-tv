@@ -23,7 +23,7 @@ final class LocalLibrary {
     static synchronized void watched(Context c,String serialized){
         try{Api.Film f=film(new JSONObject(serialized));if(f.address.isEmpty())return;
             JSONArray next=new JSONArray().put(json(f));for(Api.Film item:list(c,"history"))if(!item.address.equals(f.address)&&next.length()<60)next.put(json(item));
-            prefs(c).edit().putString("history",next.toString()).putLong("revision",revision(c)+1).apply();
+            prefs(c).edit().putString("history",next.toString()).putLong("revision",revision(c)+1).apply();RecommendationProvider.changed(c);
         }catch(JSONException ignored){}
     }
 }

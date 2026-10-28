@@ -8,3 +8,4 @@
 *.yml text eol=lf
 *.ps1 text eol=crlf
 *.jar binary
+integrations/free-my-tv/*.patch text eol=lf whitespace=-blank-at-eol

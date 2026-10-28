@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.krasview.tv" android:versionCode="15" android:versionName="0.15">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.krasview.tv" android:versionCode="16" android:versionName="0.16">
  <permission android:name="local.krasview.tv.permission.READ_RECOMMENDATIONS" android:protectionLevel="normal"/>
  <uses-permission android:name="android.permission.INTERNET"/>
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>

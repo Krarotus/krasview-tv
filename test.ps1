@@ -6,9 +6,9 @@ if(-not $JavaHome){$JavaHome=$env:JAVA_HOME}
 if(-not $JavaHome){$JavaHome=Join-Path (Split-Path $PSScriptRoot -Parent) 'tv-tools/jdk/jdk-17.0.20.1+1'}
 $testOut=Join-Path $PSScriptRoot 'out/unit-tests'
 New-Item -ItemType Directory -Force $testOut | Out-Null
-& "$JavaHome/bin/javac.exe" -encoding UTF-8 -d $testOut app/src/local/krasview/tv/SeekRamp.java app/src/local/krasview/tv/MovieChoices.java app/src/local/krasview/tv/SubtitleFiles.java app/src/local/krasview/tv/VideoPreview.java app/src/local/krasview/tv/RecommendationRanker.java tests/SeekRampTest.java tests/MovieChoicesTest.java tests/SubtitleFilesTest.java tests/VideoPreviewTest.java tests/RecommendationRankerTest.java
+& "$JavaHome/bin/javac.exe" -encoding UTF-8 -d $testOut app/src/local/krasview/tv/SeekRamp.java app/src/local/krasview/tv/MovieChoices.java app/src/local/krasview/tv/SubtitleFiles.java app/src/local/krasview/tv/VideoPreview.java app/src/local/krasview/tv/RecommendationRanker.java app/src/local/krasview/tv/HomeCache.java app/src/local/krasview/tv/ArtFiles.java tests/SeekRampTest.java tests/MovieChoicesTest.java tests/SubtitleFilesTest.java tests/VideoPreviewTest.java tests/RecommendationRankerTest.java tests/HomeCacheTest.java tests/ArtFilesTest.java
 if($LASTEXITCODE -ne 0){throw 'Unit test compilation failed'}
-foreach($testClass in @('local.krasview.tv.SeekRampTest','local.krasview.tv.MovieChoicesTest','local.krasview.tv.SubtitleFilesTest','local.krasview.tv.VideoPreviewTest','local.krasview.tv.RecommendationRankerTest')){
+foreach($testClass in @('local.krasview.tv.SeekRampTest','local.krasview.tv.MovieChoicesTest','local.krasview.tv.SubtitleFilesTest','local.krasview.tv.VideoPreviewTest','local.krasview.tv.RecommendationRankerTest','local.krasview.tv.HomeCacheTest','local.krasview.tv.ArtFilesTest')){
     & "$JavaHome/bin/java.exe" -cp $testOut $testClass
     if($LASTEXITCODE -ne 0){throw "Test failed: $testClass"}
 }

@@ -1,6 +1,7 @@
 """Free My TV integration: feed cards, six-slot carousel, type tabs and title deep links.
 Requires the companion launcher patch and a rooted QA device with recommendation cache.
 Reads only our application's published cards, never session data.
+--background-only briefly plays a known title to check history-triggered refresh.
 """
 import argparse,pathlib,subprocess,time,json,xml.etree.ElementTree as ET
 p=argparse.ArgumentParser();p.add_argument('--serial',required=True);p.add_argument('--background-only',action='store_true');a=p.parse_args()
@@ -36,11 +37,17 @@ if not a.background_only:
  key(3);shot('launcher-recommendations-overview')
  print('PASS: shows/anime filter, return to app dock, Home unchanged and feed denied to untrusted caller',flush=True)
 else:
- before=json.loads(values['row-series'])['signature']
- run('shell','am','start','-n','local.krasview.tv/.LauncherLinkActivity','-a','android.intent.action.VIEW','-d','krasviewtv://film/The_Mentalist');time.sleep(6);key(23);time.sleep(3);key(20);key(23);time.sleep(10)
- assert any('Менталист' in n.get('text','') for n in tree().iter('node')),'Known playable episode must open'
+ # Normalize the baseline before choosing a different known-playable title.
+ run('shell','am','start','-n','local.krasview.tv/.MainActivity','--activity-clear-top','--activity-single-top','--ei','section','0');time.sleep(10)
+ raw=run('exec-out','cat','/data/user/0/local.krasview.tv/shared_prefs/library.xml');history=json.loads(next(n.text for n in ET.fromstring(raw) if n.get('name')=='history'))
+ address='WreckItRalph' if history and history[0]['address']=='The_Mentalist' else 'The_Mentalist';section='movie' if address=='WreckItRalph' else 'series'
+ raw=run('exec-out','cat','/data/user/0/local.krasview.tv/shared_prefs/recommendations.xml');cache={n.get('name'):n.text for n in ET.fromstring(raw)};before=json.loads(cache['row-'+section])['signature']
+ run('shell','am','start','-n','local.krasview.tv/.LauncherLinkActivity','-a','android.intent.action.VIEW','-d','krasviewtv://film/'+address);time.sleep(6);key(23);time.sleep(3)
+ if section=='series':key(20)
+ key(23);time.sleep(10);key(20)
+ assert any(n.get('content-desc')=='Пауза' for n in tree().iter('node')),'Known playable video must open'
  key(3);time.sleep(15)
  raw=run('exec-out','cat','/data/user/0/local.krasview.tv/shared_prefs/recommendations.xml');cache={n.get('name'):n.text for n in ET.fromstring(raw)}
- assert json.loads(cache['row-series'])['signature']!=before,'Home must refresh recommendations without returning through the app home'
+ assert json.loads(cache['row-'+section])['signature']!=before,'Home must refresh recommendations without returning through the app home'
  assert len(cards(tree()))==6
  print('PASS: new playback refreshes the launcher feed in the background on Home',flush=True)

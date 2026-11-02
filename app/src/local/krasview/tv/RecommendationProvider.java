@@ -15,7 +15,7 @@ public final class RecommendationProvider extends ContentProvider {
     static final String[] COLUMNS={"_id","address","title","image","year","section"};
     final ExecutorService jobs=Executors.newSingleThreadExecutor();final AtomicBoolean refreshing=new AtomicBoolean();long lastAttempt;
     @Override public boolean onCreate(){return true;}
-    static void changed(Context context){context.getContentResolver().notifyChange(URI,null);}
+    static void changed(Context context){if(context.getPackageName().equals("local.krasview.tv"))context.getContentResolver().notifyChange(URI,null);}
     void checkCaller(){int uid=Binder.getCallingUid();if(uid==android.os.Process.myUid())return;String[] packages=getContext().getPackageManager().getPackagesForUid(uid);if(packages!=null)for(String name:packages)if(name.equals("io.freemytv"))return;throw new SecurityException("Launcher access only");}
     @Override public Cursor query(Uri uri,String[] projection,String selection,String[] args,String sort){
         checkCaller();if(!URI.equals(uri)||selection!=null||args!=null||sort!=null)throw new IllegalArgumentException("Unsupported feed query");

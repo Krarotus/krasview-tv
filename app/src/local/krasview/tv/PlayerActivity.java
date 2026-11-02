@@ -16,11 +16,11 @@ public class PlayerActivity extends TvActivity implements SurfaceHolder.Callback
     final Handler main=new Handler(Looper.getMainLooper());final ExecutorService network=Executors.newSingleThreadExecutor();
     Api api;Api.Playback playback;VideoEngine player;SurfaceView surface;SubtitleView captions;FrameLayout root;LinearLayout controls;ProgressBar busy;
     TextView title,clock,seekBadge;SeekBar timeline;String selectedSubtitle;Api.NextEpisode nextEpisode;boolean nextLoading,nextFailed,nextPrompted,seekWasPlaying;
-    long scrubOrigin;
+    long scrubOrigin;boolean touchScrubbing;TextView touchPlay;
     boolean alive=true,resumed,ready,prepared,completed,loading,historyRecorded,centerHeld,desiredPlaying=true;int videoId,sourceIndex,heldKey;long position,heldAt,scrubTarget=-1;
     final Runnable hideSeekBadge=()->{if(heldKey==0&&seekBadge!=null)seekBadge.setVisibility(View.GONE);};
-    Runnable hide=()->{if(prepared&&player!=null&&player.isPlaying()&&heldKey==0){controls.setVisibility(View.GONE);captions.setBottomPaddingFraction(.08f);}};
-    final Runnable tick=new Runnable(){public void run(){if(!alive)return;if(prepared&&player!=null){try{int pos=heldKey==0?player.getCurrentPosition():(int)Math.max(0,scrubTarget),duration=player.getDuration();if(timeline.getMax()!=Math.max(1,duration))timeline.setMax(Math.max(1,duration));if(timeline.getProgress()!=pos)timeline.setProgress(pos);String stamp=time(pos)+"  /  "+time(duration);if(!stamp.contentEquals(clock.getText()))clock.setText(stamp);if(heldKey==0&&!completed&&pos>1000){position=pos;savePosition();}}catch(IllegalStateException ignored){}}main.postDelayed(this,500);}};
+    Runnable hide=()->{if(!touchScrubbing&&prepared&&player!=null&&player.isPlaying()&&heldKey==0){controls.setVisibility(View.GONE);captions.setBottomPaddingFraction(.08f);}};
+    final Runnable tick=new Runnable(){public void run(){if(!alive)return;if(prepared&&player!=null){try{int pos=heldKey==0?player.getCurrentPosition():(int)Math.max(0,scrubTarget),duration=player.getDuration();if(timeline.getMax()!=Math.max(1,duration))timeline.setMax(Math.max(1,duration));if(!touchScrubbing&&timeline.getProgress()!=pos)timeline.setProgress(pos);String stamp=time(pos)+"  /  "+time(duration);if(!touchScrubbing&&!stamp.contentEquals(clock.getText()))clock.setText(stamp);if(heldKey==0&&!completed&&pos>1000){position=pos;savePosition();}}catch(IllegalStateException ignored){}}main.postDelayed(this,500);}};
     final Runnable seekRepeat=new Runnable(){public void run(){if(heldKey==0||!prepared||player==null)return;int direction=heldKey==KeyEvent.KEYCODE_DPAD_LEFT||heldKey==KeyEvent.KEYCODE_MEDIA_REWIND?-1:1;applySeek(direction*SeekRamp.step(SystemClock.uptimeMillis()-heldAt));main.postDelayed(this,SeekRamp.INTERVAL_MS);}};
     final Runnable longCenter=()->{centerHeld=true;settings();};
     @Override public void onCreate(Bundle b){
@@ -31,10 +31,10 @@ public class PlayerActivity extends TvActivity implements SurfaceHolder.Callback
         controls=new LinearLayout(this);controls.setOrientation(1);controls.setPadding(d(28),d(12),d(28),d(14));controls.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0x00000000,0xd9000000}));root.addView(controls,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
         title=text(getIntent().getStringExtra("title"),16,TEXT);title.setMaxLines(1);title.setEllipsize(android.text.TextUtils.TruncateAt.END);controls.addView(title);
         timeline=new SeekBar(this);timeline.setFocusable(false);timeline.setFocusableInTouchMode(false);timeline.setEnabled(false);timeline.setProgressTintList(android.content.res.ColorStateList.valueOf(TEXT));timeline.setThumbTintList(android.content.res.ColorStateList.valueOf(TEXT));controls.addView(timeline,new LinearLayout.LayoutParams(-1,d(28)));
-        timeline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int value,boolean fromUser){if(fromUser&&prepared){seek(value);showControls();}}public void onStartTrackingTouch(SeekBar s){main.removeCallbacks(hide);}public void onStopTrackingTouch(SeekBar s){showControls();}});
-        LinearLayout timeRow=new LinearLayout(this);timeRow.setGravity(Gravity.CENTER_VERTICAL);controls.addView(timeRow);clock=text("",13,TEXT);timeRow.addView(clock);TextView hint=text("↑ Настройки",12,MUTED);LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(-2,-2);hp.leftMargin=d(18);timeRow.addView(hint,hp);
+        timeline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int value,boolean fromUser){if(fromUser&&prepared){if(mobile())clock.setText(time(value)+"  /  "+time(player.getDuration()));else{seek(value);showControls();}}}public void onStartTrackingTouch(SeekBar s){touchScrubbing=true;main.removeCallbacks(hide);}public void onStopTrackingTouch(SeekBar s){touchScrubbing=false;if(mobile())seek(s.getProgress());showControls();}});
+        LinearLayout timeRow=new LinearLayout(this);timeRow.setGravity(Gravity.CENTER_VERTICAL);controls.addView(timeRow);clock=text("",13,TEXT);timeRow.addView(clock);TextView hint=text(mobile()?"":"↑ Настройки",12,MUTED);LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(-2,-2);hp.leftMargin=d(18);timeRow.addView(hint,hp);
         seekBadge=text("",24,TEXT);seekBadge.setTypeface(null,1);seekBadge.setGravity(Gravity.CENTER);seekBadge.setPadding(d(20),d(10),d(20),d(10));seekBadge.setBackground(shape(0xe6251e20,0));seekBadge.setVisibility(View.GONE);FrameLayout.LayoutParams badgeLp=new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);badgeLp.bottomMargin=d(126);root.addView(seekBadge,badgeLp);
-        root.requestFocus();fetch();
+        if(mobile())MobileUi.player(this);root.requestFocus();fetch();
     }
     String address;
     void fetch(){
@@ -77,7 +77,7 @@ public class PlayerActivity extends TvActivity implements SurfaceHolder.Callback
             player.open(playback.sources.get(sourceIndex).url,position);
         }catch(Exception e){error("Не удалось открыть видеопоток. Попробуй ещё раз.");}
     }
-    void updatePlaybackState(){boolean playing=player!=null&&player.isPlaying();root.setContentDescription(completed?"Смотреть сначала":playing?"Пауза":"Продолжить");}
+    void updatePlaybackState(){boolean playing=player!=null&&player.isPlaying();if(touchPlay!=null)touchPlay.setText(completed?"Сначала":playing?"Ⅱ Пауза":"▶ Играть");root.setContentDescription(completed?"Смотреть сначала":playing?"Пауза":"Продолжить");}
     void fit(int w,int h){if(w<=0||h<=0)return;int rw=root.getWidth(),rh=root.getHeight();if(rw<=0||rh<=0)return;float scale=Math.min(rw/(float)w,rh/(float)h);surface.setLayoutParams(new FrameLayout.LayoutParams((int)(w*scale),(int)(h*scale),Gravity.CENTER));captions.setLayoutParams(new FrameLayout.LayoutParams((int)(w*scale),(int)(h*scale),Gravity.CENTER));}
     void error(String message){finishSeek(false);release();loading=false;busy.setVisibility(View.GONE);main.removeCallbacks(hide);new AlertDialog.Builder(this).setTitle("Не удалось открыть видео").setMessage(message).setPositiveButton("Повторить",(dialog,w)->fetch()).setNegativeButton("Назад",(dialog,w)->finish()).setOnCancelListener(dialog->finish()).show();}
     void toggle(){if(!prepared||player==null)return;stopSeek();if(completed){player.seekTo(0);completed=false;player.start();}else if(player.isPlaying())player.pause();else player.start();desiredPlaying=player.isPlaying();updatePlaybackState();showControls();}
@@ -112,7 +112,7 @@ public class PlayerActivity extends TvActivity implements SurfaceHolder.Callback
         if(e.getAction()==KeyEvent.ACTION_DOWN){if(key==KeyEvent.KEYCODE_MEDIA_NEXT){playNextEpisode();return true;}if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE){stopSeek();toggle();return true;}if(key==KeyEvent.KEYCODE_MENU||key==KeyEvent.KEYCODE_DPAD_UP){settings();return true;}if(key==KeyEvent.KEYCODE_DPAD_DOWN){showControls();root.requestFocus();return true;}}
         return super.dispatchKeyEvent(e);
     }
-    @Override public void onBackPressed(){if(heldKey!=0){finishSeek(false);seekBadge.setVisibility(View.GONE);return;}if(prepared&&controls.getVisibility()==View.VISIBLE){controls.setVisibility(View.GONE);captions.setBottomPaddingFraction(.08f);main.removeCallbacks(hide);}else finish();}
+    @Override public void onBackPressed(){if(mobile()){finish();return;}if(heldKey!=0){finishSeek(false);seekBadge.setVisibility(View.GONE);return;}if(prepared&&controls.getVisibility()==View.VISIBLE){controls.setVisibility(View.GONE);captions.setBottomPaddingFraction(.08f);main.removeCallbacks(hide);}else finish();}
     void release(){if(player!=null){try{if(prepared&&!completed){position=player.getCurrentPosition();savePosition();}}catch(IllegalStateException ignored){}player.release();player=null;}prepared=false;}
     @Override public void surfaceCreated(SurfaceHolder h){ready=true;prepare();}
     @Override public void surfaceChanged(SurfaceHolder h,int f,int w,int height){}

@@ -28,8 +28,9 @@ public class MainActivity extends TvActivity {
     CatalogFilter filter=new CatalogFilter();List<Api.Genre> genreOptions;boolean filterLoading;
     static final class Shelf {String name,section,sort,message="";boolean recommendation,failed;FrameLayout content;List<Api.Film> items=new ArrayList<>(),candidates=new ArrayList<>();Shelf(String n,String s,String o){name=n;section=s;sort=o;}}
     final Runnable clockTick=new Runnable(){public void run(){if(!alive)return;Date now=new Date();String clock=new java.text.SimpleDateFormat("HH:mm",new Locale("ru")).format(now),date=new java.text.SimpleDateFormat("d MMMM yyyy\nEEEE",new Locale("ru")).format(now);if(!clock.contentEquals(timeView.getText()))timeView.setText(clock);if(!date.contentEquals(dateView.getText()))dateView.setText(date);handler.postDelayed(this,1000);}};
-    @Override public void onCreate(Bundle state){super.onCreate(state);api=new Api(this);selectedMenu=Math.max(0,Math.min(8,getIntent().getIntExtra("section",0)));readGenre(getIntent());account=text("Аккаунт",14,TEXT);search=new EditText(this);build();handler.post(clockTick);libraryRevision=LocalLibrary.revision(this);historyStamp=LocalLibrary.historyStamp(this);load(false);if(getIntent().getBooleanExtra("open_search",false))handler.post(()->editSearch());if(getIntent().getBooleanExtra("open_filter",false))handler.post(()->openFilter());}
+    @Override public void onCreate(Bundle state){super.onCreate(state);api=new Api(this);if(state!=null){getIntent().putExtra("section",state.getInt("section",0));}selectedMenu=Math.max(0,Math.min(8,getIntent().getIntExtra("section",0)));readGenre(getIntent());if(state!=null){query=state.getString("query","");searchMode=state.getBoolean("searchMode",false);sort=state.getString("sort","top");}account=text("Аккаунт",14,TEXT);search=new EditText(this);build();if(!mobile())handler.post(clockTick);libraryRevision=LocalLibrary.revision(this);historyStamp=LocalLibrary.historyStamp(this);load(false);if(getIntent().getBooleanExtra("open_search",false))handler.post(()->editSearch());if(getIntent().getBooleanExtra("open_filter",false))handler.post(()->openFilter());}
     void build(){
+        if(mobile()){MobileUi.main(this);return;}
         root=new FrameLayout(this);root.setBackgroundColor(BG);setContentView(root);
         body=new LinearLayout(this);body.setOrientation(1);FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(-1,-1);bp.topMargin=d(74);root.addView(body,bp);
         status=text("",16,MUTED);status.setPadding(d(28),d(8),d(28),0);body.addView(status);
@@ -55,16 +56,16 @@ public class MainActivity extends TvActivity {
         timeView=text("",31,TEXT);timeView.setTypeface(null,1);timeView.setPadding(d(18),0,d(12),0);top.addView(timeView);
         dateView=text("",12,TEXT);top.addView(dateView,new LinearLayout.LayoutParams(d(130),-2));menuButton.requestFocus();
     }
-    void openDrawer(){if(drawerOpen)return;drawerOpen=true;drawer.setVisibility(View.VISIBLE);body.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);body.animate().translationX(d(236)).setDuration(160).start();menu.get(selectedMenu).requestFocus();}
+    void openDrawer(){if(mobile()){Navigation.show(this);return;}if(drawerOpen)return;drawerOpen=true;drawer.setVisibility(View.VISIBLE);body.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);body.animate().translationX(d(236)).setDuration(160).start();menu.get(selectedMenu).requestFocus();}
     void closeDrawer(boolean focus){drawerOpen=false;drawer.setVisibility(View.GONE);body.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);body.animate().translationX(0).setDuration(160).start();if(focus)focusResults();}
-    void focusResults(){int row=Math.min(lastRow,cardRows.size()-1);if(row>=0&&cardRows.get(row).isEmpty()){row=nextCardRow(row,1);if(row<0)row=nextCardRow(Math.min(lastRow,cardRows.size()-1),-1);}if(row>=0){ArrayList<View> cards=cardRows.get(row);cards.get(Math.min(lastColumn,cards.size()-1)).requestFocus();}else searchButton.requestFocus();}
+    void focusResults(){if(mobile())return;int row=Math.min(lastRow,cardRows.size()-1);if(row>=0&&cardRows.get(row).isEmpty()){row=nextCardRow(row,1);if(row<0)row=nextCardRow(Math.min(lastRow,cardRows.size()-1),-1);}if(row>=0){ArrayList<View> cards=cardRows.get(row);cards.get(Math.min(lastColumn,cards.size()-1)).requestFocus();}else searchButton.requestFocus();}
     int nextCardRow(int from,int direction){for(int r=from+direction;r>=0&&r<cardRows.size();r+=direction)if(!cardRows.get(r).isEmpty())return r;return -1;}
     void setSearch(String value){query=value;search.setText(value);}
     void hideKeyboard(){if(search!=null)((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(search.getWindowToken(),0);}
     void editSearch(){
         if(drawerOpen)closeDrawer(false);search=new EditText(this);search.setSingleLine(true);search.setText(query);search.setHint("Название фильма или сериала");search.setTextColor(TEXT);search.setTextSize(20);search.setPadding(d(22),d(16),d(22),d(16));search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Поиск").setView(search).setPositiveButton("Найти",(x,w)->{hideKeyboard();submitSearch();}).setNeutralButton("Голос",(x,w)->voice()).setNegativeButton("Отмена",null).create();
-        search.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEARCH){hideKeyboard();dialog.dismiss();submitSearch();return true;}return false;});dialog.show();search.requestFocus();search.setSelection(search.length());
+        search.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_SEARCH){hideKeyboard();dialog.dismiss();submitSearch();return true;}return false;});dialog.show();search.requestFocus();search.setSelection(search.length());if(mobile()){dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE|WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);}
     }
     void submitSearch(){query=search.getText().toString().trim();searchMode=!query.isEmpty();selectedMenu=4;lastRow=lastColumn=0;load(false);}
     void voice(){try{Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ru-RU");i.putExtra(RecognizerIntent.EXTRA_PROMPT,"Что найти в KrasView?");startActivityForResult(i,10);}catch(ActivityNotFoundException e){Toast.makeText(this,"Голосовой ввод недоступен",Toast.LENGTH_SHORT).show();editSearch();}}
@@ -92,7 +93,7 @@ public class MainActivity extends TvActivity {
                 try{HomeCache.write(cacheFile,writeHome(fresh));}catch(java.io.IOException ignored){android.util.Log.w("KrasViewTV","Home cache could not be saved");}
                 ArrayList<Shelf> rows=homeRows(fresh);handler.post(()->{if(!alive||ticket!=generation)return;loading=false;applyHome(rows,ticket,loadStarted,false);});
             }else{String section=mode==1?"movie":mode==2?"series":mode==5?"anime":"all";Api.Page result=api.catalog(section,requestedQuery,requestedPage,requestedSort,mode==3,requestedFilter);
-                handler.post(()->{if(!alive||ticket!=generation)return;loading=false;int oldCount=films.size();films.addAll(result.items);more=result.more;renderGrid();if(append){lastRow=oldCount/6;lastColumn=oldCount%6;handler.post(()->focusResults());}});}
+                handler.post(()->{if(!alive||ticket!=generation)return;loading=false;int oldCount=films.size();films.addAll(result.items);more=result.more;renderGrid();if(append){lastRow=oldCount/columns();lastColumn=oldCount%columns();handler.post(()->focusResults());}});}
         }catch(Exception e){handler.post(()->{if(!alive||ticket!=generation)return;loading=false;if(append)page=Math.max(1,page-1);status.setText("Не удалось загрузить каталог");if(e instanceof Api.AuthRequired){api.logout();empty("Нужен вход в аккаунт","Войти",()->login());}else if(isHome&&!shelves.isEmpty()){status.setVisibility(View.VISIBLE);status.setText("Не удалось обновить главную. Показаны сохранённые подборки.");if(!LocalLibrary.historyStamp(this).equals(historyStamp))refreshRecommendations();}else if(films.isEmpty()&&shelves.isEmpty())empty("Каталог не загрузился","Повторить",()->load(false));});}});
     }
     static List<List<Api.Film>> readHome(HomeCache.Snapshot snapshot){List<List<Api.Film>> rows=new ArrayList<>();for(List<HomeCache.Item> saved:snapshot.rows){List<Api.Film> row=new ArrayList<>();for(HomeCache.Item item:saved){Api.Film f=new Api.Film();f.id=item.id;f.address=item.address;f.title=item.title;f.image=item.image;f.year=item.year;f.section=item.section;f.genre=item.genre;f.rating="";row.add(f);}rows.add(row);}return rows;}
@@ -105,16 +106,16 @@ public class MainActivity extends TvActivity {
     void empty(String message,String action,Runnable run){status.setVisibility(View.GONE);posters.clear();gridRows.removeAllViews();cardRows.clear();LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(d(32),d(70),d(32),0);gridRows.addView(box);TextView label=text(message,25,TEXT);box.addView(label);TextView b=button(action);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(250),d(52));lp.topMargin=d(22);box.addView(b,lp);b.setOnClickListener(v->run.run());}
     void renderHome(){final int requestedRow=lastRow,requestedColumn=lastColumn;moreButton=null;status.setVisibility(View.GONE);posters.clear();gridRows.removeAllViews();cardRows.clear();
         for(int r=0;r<shelves.size();r++){Shelf shelf=shelves.get(r);final int rowIndex=cardRows.size();cardRows.add(new ArrayList<>());
-            LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(d(28),d(18),d(28),d(14));gridRows.addView(header);TextView name=text(shelf.name,25,TEXT);header.addView(name,new LinearLayout.LayoutParams(0,-2,1));
-            if(shelf.recommendation){TextView note=text("По истории просмотров",13,MUTED);header.addView(note);}else{TextView extra=button("Ещё");header.addView(extra,new LinearLayout.LayoutParams(d(76),d(38)));extra.setOnClickListener(v->{selectedMenu=shelf.section.equals("movie")?1:shelf.section.equals("series")?2:shelf.section.equals("anime")?5:4;sort=shelf.sort;lastRow=lastColumn=0;load(false);});}
+            LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(d(mobile()?16:28),d(18),d(mobile()?16:28),d(14));gridRows.addView(header);TextView name=text(shelf.name,mobile()?20:25,TEXT);header.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+            if(shelf.recommendation&&!mobile()){TextView note=text("По истории просмотров",13,MUTED);header.addView(note);}else if(!shelf.recommendation){TextView extra=button("Ещё");extra.setPadding(d(8),0,d(8),0);header.addView(extra,new LinearLayout.LayoutParams(d(mobile()?60:76),d(mobile()?48:38)));extra.setOnClickListener(v->{selectedMenu=shelf.section.equals("movie")?1:shelf.section.equals("series")?2:shelf.section.equals("anime")?5:4;sort=shelf.sort;lastRow=lastColumn=0;load(false);});}
             shelf.content=new FrameLayout(this);gridRows.addView(shelf.content,new LinearLayout.LayoutParams(-1,-2));renderShelfItems(shelf,rowIndex);
         }
         handler.post(()->{if(!drawerOpen){lastRow=requestedRow;lastColumn=requestedColumn;focusResults();}});
     }
     void renderShelfItems(Shelf shelf,int rowIndex){View anchor=getCurrentFocus();int selectedColumn=lastColumn;boolean restore=shelf.content.hasFocus();Object selectedTag=restore&&anchor!=null?anchor.getTag():null;int[] before=new int[2];if(anchor!=null)anchor.getLocationOnScreen(before);shelf.content.removeAllViews();ArrayList<View> rowCards=cardRows.get(rowIndex);rowCards.clear();
         if(shelf.items.isEmpty()){LinearLayout box=new LinearLayout(this);box.setGravity(Gravity.CENTER_VERTICAL);box.setPadding(d(28),d(8),d(28),d(24));TextView info=text(shelf.message.isEmpty()?"Список пока пуст":shelf.message,16,MUTED);box.addView(info,new LinearLayout.LayoutParams(0,-2,1));shelf.content.addView(box,new FrameLayout.LayoutParams(-1,-2));if(shelf.failed){TextView retry=button("Повторить");box.addView(retry,new LinearLayout.LayoutParams(d(130),d(44)));rowCards.add(retry);retry.setOnFocusChangeListener((v,on)->{v.setBackground(shape(on?TEXT:PANEL,0));retry.setTextColor(on?BG:TEXT);if(on){lastRow=rowIndex;lastColumn=0;}});wireCardNavigation(retry,rowIndex,0);retry.setOnClickListener(v->refreshRecommendations());}}
-        else{HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);scroll.setClipToPadding(false);scroll.setPadding(d(28),d(8),d(28),d(20));shelf.content.addView(scroll);LinearLayout row=new LinearLayout(this);row.setClipChildren(false);scroll.addView(row);
-            for(int i=0;i<shelf.items.size();i++){View card=card(shelf.items.get(i),rowIndex,i,d(188),true);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(188),-2);lp.rightMargin=d(18);row.addView(card,lp);rowCards.add(card);}}
+        else{HorizontalScrollView scroll=new HorizontalScrollView(this);scroll.setHorizontalScrollBarEnabled(false);scroll.setClipToPadding(false);scroll.setPadding(d(mobile()?16:28),d(8),d(mobile()?16:28),d(20));shelf.content.addView(scroll);LinearLayout row=new LinearLayout(this);row.setClipChildren(false);scroll.addView(row);
+            for(int i=0;i<shelf.items.size();i++){View card=card(shelf.items.get(i),rowIndex,i,d(mobile()?142:188),true);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(mobile()?142:188),-2);lp.rightMargin=d(mobile()?12:18);row.addView(card,lp);rowCards.add(card);}}
         if(restore&&!drawerOpen){if(selectedTag!=null)for(int i=0;i<rowCards.size();i++)if(selectedTag.equals(rowCards.get(i).getTag())){selectedColumn=i;break;}lastRow=rowIndex;lastColumn=selectedColumn;focusResults();}else if(anchor!=null&&anchor.isAttachedToWindow()){anchor.requestFocus();scroller.post(()->{if(anchor==getCurrentFocus()&&anchor.isAttachedToWindow()){int[] after=new int[2];anchor.getLocationOnScreen(after);scroller.scrollBy(0,after[1]-before[1]);}});}
     }
     void refreshRecommendations(){if(!home()||shelves.isEmpty())return;historyStamp=LocalLibrary.historyStamp(this);final List<Api.Film> history=LocalLibrary.list(this,"history");final int request=++recommendationGeneration,ticket=generation;
@@ -123,12 +124,13 @@ public class MainActivity extends TvActivity {
                 handler.post(()->{if(!alive||ticket!=generation||request!=recommendationGeneration||!home())return;shelf.items.clear();shelf.items.addAll(value.items);shelf.message=value.message;shelf.failed=value.failed;renderShelfItems(shelf,rowIndex);});});
         }
     }
+    int columns(){return mobile()?Math.max(2,(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density)/170):6;}
     void renderGrid(){status.setVisibility(!home()&&selectedMenu!=6&&selectedMenu!=7&&filter.active()?View.VISIBLE:View.GONE);if(status.getVisibility()==View.VISIBLE)status.setText(filter.summary());posters.clear();gridRows.removeAllViews();cardRows.clear();moreButton=null;
         if(films.isEmpty()){String message=selectedMenu==6?"Пока нет закладок":selectedMenu==7?"История появится после просмотра":searchMode?"Ничего не найдено":"Здесь пока пусто";empty(message,searchMode?"Изменить запрос":"К главной",()->{if(searchMode)editSearch();else{selectedMenu=0;load(false);}});return;}
-        int columns=6;int width=(getResources().getDisplayMetrics().widthPixels-d(56+5*18))/columns;
+        int columns=columns();int width=(getResources().getDisplayMetrics().widthPixels-d(mobile()?32+(columns-1)*12:56+5*18))/columns;
         TextView label=text(searchMode?"Результаты поиска":labels[selectedMenu],25,TEXT);label.setPadding(d(28),d(18),0,d(20));gridRows.addView(label);
-        for(int start=0;start<films.size();start+=columns){int rowIndex=cardRows.size();ArrayList<View> rowCards=new ArrayList<>();cardRows.add(rowCards);LinearLayout row=new LinearLayout(this);row.setPadding(d(28),d(8),d(28),d(24));row.setClipChildren(false);gridRows.addView(row);
-            for(int col=0;col<columns&&start+col<films.size();col++){View card=card(films.get(start+col),rowIndex,col,width,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(width,-2);lp.rightMargin=d(18);row.addView(card,lp);rowCards.add(card);}}
+        for(int start=0;start<films.size();start+=columns){int rowIndex=cardRows.size();ArrayList<View> rowCards=new ArrayList<>();cardRows.add(rowCards);LinearLayout row=new LinearLayout(this);row.setPadding(d(mobile()?16:28),d(8),d(mobile()?16:28),d(24));row.setClipChildren(false);gridRows.addView(row);
+            for(int col=0;col<columns&&start+col<films.size();col++){View card=card(films.get(start+col),rowIndex,col,width,false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(width,-2);lp.rightMargin=d(mobile()?12:18);row.addView(card,lp);rowCards.add(card);}}
         if(more&&selectedMenu!=6&&selectedMenu!=7){moreButton=button("Показать ещё");LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(d(250),d(50));lp.leftMargin=d(28);gridRows.addView(moreButton,lp);moreButton.setOnClickListener(v->load(true));}
         handler.post(()->{if(!drawerOpen)focusResults();});
     }
@@ -136,7 +138,7 @@ public class MainActivity extends TvActivity {
         LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(d(3),d(3),d(3),d(3));box.setFocusable(true);box.setClickable(true);box.setContentDescription(film.title+", "+film.year);box.setTag(film.address);
         FrameLayout art=new FrameLayout(this);art.setPadding(d(2),d(2),d(2),d(2));art.setBackground(shape(PANEL,0));box.addView(art,new LinearLayout.LayoutParams(-1,(int)(width*1.49f)));
         ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setClipToOutline(true);image.setBackground(shape(PANEL,0));art.addView(image,new FrameLayout.LayoutParams(-1,-1));posters.add(image,film.image);
-        TextView name=text(film.title,18,TEXT);name.setPadding(0,d(14),0,0);name.setMaxLines(2);name.setEllipsize(TextUtils.TruncateAt.END);box.addView(name,new LinearLayout.LayoutParams(-1,d(62)));TextView year=text(film.year,14,MUTED);box.addView(year);if(film.genre!=null&&!film.genre.isEmpty()){TextView genres=text(film.genre.replace('\n',' ').replaceAll("\\s*,\\s*"," · "),12,MUTED);genres.setMaxLines(1);genres.setEllipsize(TextUtils.TruncateAt.END);genres.setPadding(0,d(4),0,0);box.addView(genres,new LinearLayout.LayoutParams(-1,d(23)));}
+        TextView name=text(film.title,mobile()?14:18,TEXT);name.setPadding(0,d(mobile()?8:14),0,0);name.setMaxLines(2);name.setEllipsize(TextUtils.TruncateAt.END);box.addView(name,new LinearLayout.LayoutParams(-1,d(mobile()?48:62)));TextView year=text(film.year,14,MUTED);box.addView(year);if(film.genre!=null&&!film.genre.isEmpty()){TextView genres=text(film.genre.replace('\n',' ').replaceAll("\\s*,\\s*"," · "),12,MUTED);genres.setMaxLines(1);genres.setEllipsize(TextUtils.TruncateAt.END);genres.setPadding(0,d(4),0,0);box.addView(genres,new LinearLayout.LayoutParams(-1,d(23)));}
         box.setOnFocusChangeListener((v,on)->{art.setBackground(shape(on?TEXT:PANEL,0));v.setScaleX(on?1.025f:1);v.setScaleY(on?1.025f:1);if(on){lastRow=rowIndex;lastColumn=column;}});
         box.setOnClickListener(v->details(film));
         wireCardNavigation(box,rowIndex,column);return box;
@@ -155,20 +157,20 @@ public class MainActivity extends TvActivity {
     }
     void login() {
         new AlertDialog.Builder(this).setTitle("Как войти в KrasView?")
-            .setItems(new String[]{"Вход с телефона по коду","Электронная почта и пароль"},(dialog,index)->{ if(index==0) pinLogin(); else passwordLogin(); })
+            .setItems(new String[]{mobile()?"Вход через браузер по коду":"Вход с телефона по коду","Электронная почта и пароль"},(dialog,index)->{ if(index==0) pinLogin(); else passwordLogin(); })
             .setNegativeButton("Пока посмотреть оформление",null).show();
     }
     void pinLogin() {
         final int ticket=++pinGeneration;
         LinearLayout form=new LinearLayout(this); form.setOrientation(1); form.setGravity(Gravity.CENTER_HORIZONTAL); form.setPadding(d(28),d(10),d(28),d(16));
-        TextView info=text("QR откроет страницу привязки. Войди на сайте, затем вручную введи код с телевизора.",16,TEXT); info.setGravity(Gravity.CENTER); form.addView(info,new LinearLayout.LayoutParams(d(540),-2));
+        TextView info=text("QR откроет страницу привязки. Войди на сайте, затем вручную введи код приложения.",16,TEXT); info.setGravity(Gravity.CENTER); form.addView(info,new LinearLayout.LayoutParams(mobile()?-1:d(540),-2));
         ImageView qr=new ImageView(this); qr.setScaleType(ImageView.ScaleType.FIT_CENTER); qr.setBackgroundColor(Color.WHITE); qr.setPadding(d(8),d(8),d(8),d(8));
         LinearLayout.LayoutParams imageLp=new LinearLayout.LayoutParams(d(200),d(200)); imageLp.topMargin=d(16); form.addView(qr,imageLp);
         TextView codeLabel=text("Получаю код…",32,ACCENT); codeLabel.setLetterSpacing(.16f); codeLabel.setPadding(0,d(10),0,d(6)); form.addView(codeLabel);
         TextView tip=text("atoto.ru/pin — без цифр в адресе. Код вводится в поле «Код».",14,MUTED); tip.setGravity(Gravity.CENTER); form.addView(tip);
         TextView google=button("Отдельный вход через Google"); LinearLayout.LayoutParams glp=new LinearLayout.LayoutParams(-1,d(44)); glp.topMargin=d(10); form.addView(google,glp);
         TextView state=text("",13,MUTED); state.setPadding(0,d(8),0,0); form.addView(state);
-        pinDialog=new AlertDialog.Builder(this).setTitle("Привязка телевизора к KrasView").setView(form)
+        pinDialog=new AlertDialog.Builder(this).setTitle(mobile()?"Вход в KrasView":"Привязка телевизора к KrasView").setView(form)
             .setPositiveButton("Новый код",null).setNegativeButton("Отмена",null).create();
         final AlertDialog dialog=pinDialog;
         final boolean[] googleQr={false};
@@ -188,11 +190,12 @@ public class MainActivity extends TvActivity {
         });
         dialog.setOnDismissListener(v->{ if(ticket==pinGeneration) pinGeneration++; });
         dialog.setOnShowListener(v->dialog.getButton(-1).setOnClickListener(w->{ dialog.dismiss(); pinLogin(); })); dialog.show();
+        if(mobile()){qr.setVisibility(View.GONE);info.setText("Открой страницу привязки в браузере, войди в аккаунт и введи код ниже. Затем вернись в приложение.");TextView open=button("Открыть страницу входа");form.addView(open,2,new LinearLayout.LayoutParams(-1,d(48)));open.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(Qr.LINK)));}catch(ActivityNotFoundException e){Toast.makeText(this,"Не найден браузер",Toast.LENGTH_SHORT).show();}});google.setVisibility(View.GONE);}
         network.execute(()->{
             try {
                 org.json.JSONObject result=api.generatePin(); String code=result.getString("code");
                 Bitmap bitmap=Qr.image(Qr.LINK,d(220));
-                handler.post(()->{ if(!alive||ticket!=pinGeneration||!dialog.isShowing())return; if(!googleQr[0])qr.setImageBitmap(bitmap); codeLabel.setText(code); state.setText("Жду подтверждения на телефоне…"); pollPin(code,ticket,dialog,state,System.currentTimeMillis()); });
+                handler.post(()->{ if(!alive||ticket!=pinGeneration||!dialog.isShowing())return; if(!googleQr[0])qr.setImageBitmap(bitmap); codeLabel.setText(code); state.setText(mobile()?"После привязки вернись в приложение":"Жду подтверждения на телефоне…"); pollPin(code,ticket,dialog,state,System.currentTimeMillis()); });
             } catch(Exception e) { handler.post(()->{ if(alive&&ticket==pinGeneration&&dialog.isShowing()) { codeLabel.setText("Нет связи"); state.setText("Не удалось получить код. Нажми «Новый код»."); } }); }
         });
     }
@@ -210,7 +213,7 @@ public class MainActivity extends TvActivity {
                 } catch(Exception e) { handler.post(()->{
                     if(!alive||ticket!=pinGeneration||!dialog.isShowing())return;
                     if(e instanceof Api.PinExpired) state.setText("Сервер сообщил, что код больше не действует. Нажми «Новый код».");
-                    else if(e instanceof Api.SessionStoreException) state.setText("Вход подтверждён, но не удалось сохранить сеанс на стике.");
+                    else if(e instanceof Api.SessionStoreException) state.setText("Вход подтверждён, но не удалось сохранить сеанс на устройстве.");
                     else { state.setText("Не удалось проверить подтверждение. Повторяю проверку…"); pollPin(code,ticket,dialog,state,started); }
                 }); }
             });
@@ -235,6 +238,7 @@ public class MainActivity extends TvActivity {
 
     @Override public boolean dispatchKeyEvent(KeyEvent e){if(e.getAction()==0){if(e.getKeyCode()==KeyEvent.KEYCODE_SEARCH){editSearch();return true;}if(e.getKeyCode()==KeyEvent.KEYCODE_MENU){if(drawerOpen)closeDrawer(true);else openDrawer();return true;}}return super.dispatchKeyEvent(e);}
     @Override public void onBackPressed(){if(drawerOpen){closeDrawer(true);return;}if(searchMode||selectedMenu!=0){searchMode=false;selectedMenu=0;query="";sort="top";filter=new CatalogFilter();lastRow=lastColumn=0;load(false);menuButton.requestFocus();return;}if(System.currentTimeMillis()-backAt<1800){super.onBackPressed();return;}backAt=System.currentTimeMillis();menuButton.requestFocus();Toast.makeText(this,"Ещё раз «Назад» — выйти",Toast.LENGTH_SHORT).show();}
+    @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putInt("section",selectedMenu);out.putString("query",query);out.putBoolean("searchMode",searchMode);out.putString("sort",sort);}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent.hasExtra("section")){selectedMenu=Math.max(0,Math.min(8,intent.getIntExtra("section",0)));searchMode=false;query="";sort="top";filter=new CatalogFilter();readGenre(intent);lastRow=lastColumn=0;if(drawerOpen)closeDrawer(false);load(false);}if(intent.getBooleanExtra("open_search",false))editSearch();if(intent.getBooleanExtra("open_filter",false))openFilter();}
     @Override protected void onResume(){super.onResume();if(posters!=null)posters.resume();if(api!=null){long revision=LocalLibrary.revision(this);if(revision!=libraryRevision){libraryRevision=revision;if(selectedMenu==6||selectedMenu==7)load(false);else if(home()&&!loading&&!LocalLibrary.historyStamp(this).equals(historyStamp))refreshRecommendations();}}}
     @Override protected void onPause(){if(posters!=null)posters.pause();super.onPause();}

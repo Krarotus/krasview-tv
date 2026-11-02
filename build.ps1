@@ -5,7 +5,8 @@ param(
     [string]$AndroidSdkRoot,
     [string]$BuildToolsVersion='34.0.0',
     [string]$Platform='android-34',
-    [string]$SigningKey
+    [string]$SigningKey,
+    [ValidateSet('TV','Mobile')][string]$Flavor='TV'
 )
 $ErrorActionPreference='Stop'
 Set-Location $PSScriptRoot
@@ -26,6 +27,8 @@ $env:PATH="$jdk/bin;$env:PATH"
 function Run([string]$exe,[string[]]$arguments) { & $exe @arguments; if($LASTEXITCODE -ne 0) { throw "$exe failed ($LASTEXITCODE)" } }
 $out=Join-Path $PSScriptRoot ('out/'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force "$out/gen","$out/classes" | Out-Null
+$manifest=if($Flavor -eq 'Mobile'){'app/AndroidManifest.mobile.xml'}else{'app/AndroidManifest.xml'}
+$apkName=if($Flavor -eq 'Mobile'){'KrasView-Mobile.apk'}else{'KrasView-TV.apk'}
 Run "$bt/aapt2.exe" @('compile','--dir','app/res','-o',"$out/res.zip")
 $deps=Get-Content 'libs/media3-lock.json' -Raw | ConvertFrom-Json
 $dependencyJars=@();$resourceArgs=@();$packages=@()
@@ -43,7 +46,7 @@ foreach($dep in $deps) {
         }
     }
 }
-Run "$bt/aapt2.exe" (@('link','--auto-add-overlay','--extra-packages',(($packages | Select-Object -Unique) -join ':'),'-o',"$out/base.apk",'-I',$aj,'--manifest','app/AndroidManifest.xml','--java',"$out/gen",'-A','app/assets',"$out/res.zip",'--min-sdk-version','26','--target-sdk-version','30')+$resourceArgs)
+Run "$bt/aapt2.exe" (@('link','--auto-add-overlay','--extra-packages',(($packages | Select-Object -Unique) -join ':'),'-o',"$out/base.apk",'-I',$aj,'--manifest',$manifest,'--java',"$out/gen",'-A','app/assets',"$out/res.zip",'--min-sdk-version','26','--target-sdk-version','30')+$resourceArgs)
 $sources=Get-ChildItem app/src,"$out/gen" -Recurse -Filter '*.java' | ForEach-Object { '"'+$_.FullName.Replace('\','/')+'"' }
 [IO.File]::WriteAllLines("$out/sources.txt",$sources,[Text.UTF8Encoding]::new($false))
 Run "$jdk/bin/javac.exe" @('-source','8','-target','8','-encoding','UTF-8','-bootclasspath',"$aj;$bt/core-lambda-stubs.jar",'-classpath',("$aj;$PSScriptRoot/libs/zxing-core-3.5.3.jar;"+($dependencyJars -join ';')),'-d',"$out/classes","@$out/sources.txt")
@@ -52,6 +55,6 @@ Run "$bt/d8.bat" (@('--release','--min-api','26','--lib',$aj,'--output',$out,"$o
 foreach($dex in Get-ChildItem $out -Filter 'classes*.dex') { Run "$jdk/bin/jar.exe" @('-u','-M','-f',"$out/base.apk",'-C',$out,$dex.Name) }
 Run "$bt/zipalign.exe" @('-f','-p','4',"$out/base.apk","$out/aligned.apk")
 if(-not (Test-Path -LiteralPath $SigningKey)) { Run "$jdk/bin/keytool.exe" @('-genkeypair','-keystore',$SigningKey,'-alias','tv','-keyalg','RSA','-keysize','2048','-validity','20000','-storepass:env','KRASVIEW_BUILD_STORE_PASS','-keypass:env','KRASVIEW_BUILD_KEY_PASS','-dname','CN=Local TV Prototype') }
-Run "$bt/apksigner.bat" @('sign','--ks',$SigningKey,'--ks-pass','env:KRASVIEW_BUILD_STORE_PASS','--key-pass','env:KRASVIEW_BUILD_KEY_PASS','--out','KrasView-TV.apk',"$out/aligned.apk")
-Run "$bt/apksigner.bat" @('verify','KrasView-TV.apk')
-Write-Output 'Built KrasView-TV.apk'
+Run "$bt/apksigner.bat" @('sign','--ks',$SigningKey,'--ks-pass','env:KRASVIEW_BUILD_STORE_PASS','--key-pass','env:KRASVIEW_BUILD_KEY_PASS','--out',$apkName,"$out/aligned.apk")
+Run "$bt/apksigner.bat" @('verify',$apkName)
+Write-Output "Built $apkName"

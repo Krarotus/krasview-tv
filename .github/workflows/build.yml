@@ -40,3 +40,7 @@ jobs:
         run: ./build.ps1 -AndroidSdkRoot $env:ANDROID_SDK_ROOT
       - name: Check APK contents
         run: python tests/audit_apk.py
+      - name: Build mobile APK
+        run: ./build.ps1 -Flavor Mobile -AndroidSdkRoot $env:ANDROID_SDK_ROOT
+      - name: Check mobile APK contents
+        run: python tests/audit_apk.py KrasView-Mobile.apk
